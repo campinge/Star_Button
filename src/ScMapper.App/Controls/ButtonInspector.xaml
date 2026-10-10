@@ -1,0 +1,77 @@
+<UserControl x:Class="ScMapper.App.Controls.ButtonInspector"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:ScMapper.App.Controls">
+    <Border Style="{StaticResource Card}">
+        <Grid>
+            <TextBlock x:Name="Empty" Style="{StaticResource Muted}" TextWrapping="Wrap" VerticalAlignment="Center"
+                       HorizontalAlignment="Center" TextAlignment="Center" Margin="0,20"
+                       Text="Click a button in the grid, or press it on the stick." />
+            <StackPanel x:Name="Body" Visibility="Collapsed">
+                <DockPanel>
+                    <Button x:Name="ClearAll" DockPanel.Dock="Right" Style="{StaticResource Flat}" Content="Clear everything"
+                            Click="ClearAll_Click" VerticalAlignment="Top" />
+                    <StackPanel>
+                        <TextBlock x:Name="Title" Style="{StaticResource H1}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="Subtitle" Style="{StaticResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </DockPanel>
+
+                <TextBlock Style="{StaticResource H2}" Text="Keyboard output" Margin="0,18,0,8" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="On press" VerticalAlignment="Center" />
+                    <c:KeyCaptureBox x:Name="PressKeys" Grid.Column="1" MinHeight="38" Margin="0,0,6,0" />
+                    <Button x:Name="PressClear" Grid.Column="2" Style="{StaticResource Flat}" Content="✕" MinWidth="38" MinHeight="38"
+                            Click="PressClear_Click" ToolTip="Clear" />
+                    <CheckBox x:Name="HoldCheck" Grid.Row="1" Grid.Column="1" Content="Hold while pressed" Margin="2,10,0,0"
+                              Click="HoldCheck_Click"
+                              ToolTip="Keep the keys down until you release the button" />
+
+                    <TextBlock Grid.Row="2" Text="On release" VerticalAlignment="Center" Margin="0,12,0,0" />
+                    <c:KeyCaptureBox x:Name="ReleaseKeys" Grid.Row="2" Grid.Column="1" MinHeight="38" Margin="0,12,6,0" />
+                    <Button x:Name="ReleaseClear" Grid.Row="2" Grid.Column="2" Style="{StaticResource Flat}" Content="✕"
+                            MinWidth="38" MinHeight="38" Margin="0,12,0,0" Click="ReleaseClear_Click" ToolTip="Clear" />
+
+                    <TextBlock Grid.Row="3" Text="Label" VerticalAlignment="Center" Margin="0,12,0,0" />
+                    <TextBox x:Name="LabelBox" Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" MinHeight="38" Margin="0,12,0,0"
+                             TextChanged="LabelBox_TextChanged" />
+                </Grid>
+                <TextBlock x:Name="KeyError" Foreground="{StaticResource BadBrush}" Margin="0,6,0,0" Visibility="Collapsed" />
+
+                <TextBlock Style="{StaticResource H2}" Text="Star Citizen bindings" Margin="0,22,0,8" />
+                <ItemsControl x:Name="BindList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{StaticResource BgBrush}" CornerRadius="6" Padding="10,6" Margin="0,0,0,4">
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource Flat}" Content="Remove" Tag="{Binding}"
+                                            Click="RemoveBind_Click" />
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Mode}" Style="{StaticResource Muted}"
+                                               VerticalAlignment="Center" Margin="0,0,10,0" />
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Group}" Style="{StaticResource Muted}" FontSize="11"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock x:Name="NoBinds" Style="{StaticResource Muted}" TextWrapping="Wrap"
+                           Text="Nothing bound. Use the Bindings tab." />
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

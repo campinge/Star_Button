@@ -1,0 +1,58 @@
+<Window x:Class="ScMapper.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="clr-namespace:ScMapper.App.Views"
+        Title="Star Button" Width="1320" Height="860" MinWidth="1100" MinHeight="680"
+        Background="{StaticResource BgBrush}" WindowStartupLocation="CenterScreen"
+        FontFamily="{StaticResource UiFont}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="210" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+                <DockPanel Margin="16">
+                    <StackPanel DockPanel.Dock="Top" Margin="6,6,0,28">
+                        <TextBlock FontSize="19" FontWeight="Bold">
+                            <Run Text="★" Foreground="{StaticResource AccentBrush}" /><Run Text=" Star Button" />
+                        </TextBlock>
+                        <TextBlock Style="{StaticResource Muted}" FontSize="11" Text="Stick mapper for Star Citizen" Margin="2,2,0,0" />
+                    </StackPanel>
+                    <StackPanel>
+                        <RadioButton x:Name="NavSticks" Style="{StaticResource Nav}" Content="Sticks" IsChecked="True" Checked="Nav_Checked" />
+                        <RadioButton x:Name="NavBindings" Style="{StaticResource Nav}" Content="Bindings" Checked="Nav_Checked" />
+                        <RadioButton x:Name="NavProfiles" Style="{StaticResource Nav}" Content="Profiles" Checked="Nav_Checked" />
+                        <RadioButton x:Name="NavDeploy" Style="{StaticResource Nav}" Content="Deploy" Checked="Nav_Checked" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <Grid Grid.Column="1">
+                <v:SticksView x:Name="SticksPage" />
+                <v:BindingsView x:Name="BindingsPage" Visibility="Collapsed" />
+                <v:ProfilesView x:Name="ProfilesPage" Visibility="Collapsed" />
+                <v:DeployView x:Name="DeployPage" Visibility="Collapsed" />
+            </Grid>
+        </Grid>
+
+        <Border Grid.Row="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,1,0,0" Padding="16,8">
+            <DockPanel>
+                <CheckBox x:Name="OutputToggle" DockPanel.Dock="Right" Content="Keyboard output" Click="OutputToggle_Click" />
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="StatusSticks" Style="{StaticResource Muted}" />
+                    <TextBlock Text="  ·  " Style="{StaticResource Muted}" />
+                    <TextBlock x:Name="StatusGame" Style="{StaticResource Muted}" />
+                    <TextBlock Text="  ·  " Style="{StaticResource Muted}" />
+                    <TextBlock x:Name="StatusLast" Style="{StaticResource Muted}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>
