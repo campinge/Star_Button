@@ -136,8 +136,6 @@ public partial class SticksView : UserControl
             StatusText.Text = d != null ? "Connected" : "Not connected";
             ModelText.Text = $"{(string.IsNullOrWhiteSpace(stick.ProductName) ? "Unknown model" : stick.ProductName.Trim())} · " +
                              $"{stick.Buttons} buttons · {stick.Axes} axes · {stick.Hats} hats · {stick.Vid:X4}:{stick.Pid:X4}";
-            ProfileCombo.ItemsSource = _c.StickProfiles.ToList();
-            ProfileCombo.SelectedItem = _c.Store.Profile(stick.ProfileId);
             var choices = new List<InstanceChoice>
             {
                 new(null, d != null ? $"Auto (js{d.DefaultScInstance})" : "Auto"),
@@ -177,10 +175,8 @@ public partial class SticksView : UserControl
         var marked = new HashSet<int>();
         if (prof != null)
         {
-            foreach (var k in prof.Rules.Keys)
+            foreach (var k in prof.Rules.Keys.Concat(prof.Actions.Select(a => a.Input)).Concat(prof.Binds.Select(b => ScMapper.Core.Sc.ScInputCodes.SplitJsInput(b.Input).Input)))
                 if (k.StartsWith("button") && int.TryParse(k[6..], out var n)) marked.Add(n);
-            foreach (var b in prof.Binds)
-                if (b.Input.StartsWith("button") && int.TryParse(b.Input[6..], out var n)) marked.Add(n);
         }
         ButtonsGrid.SetLive((bool[])st.Buttons.Clone(), marked);
         Axes.Update(d, st);
@@ -237,14 +233,10 @@ public partial class SticksView : UserControl
         }
     }
 
-    private void ProfileCombo_SelectionChanged(object s, SelectionChangedEventArgs e)
+    private void ProfileManager_Click(object s, RoutedEventArgs e)
     {
-        if (_loading || SelectedStick is not { } st || _c == null) return;
-        if (ProfileCombo.SelectedItem is ControllerProfile p)
-        {
-            st.ProfileId = p.Id;
-            _c.Touch();
-        }
+        if (_c == null) return;
+        Controls.ProfileManagerDialog.Show(Window.GetWindow(this), _c);
     }
 
     private void InstanceCombo_SelectionChanged(object s, SelectionChangedEventArgs e)
@@ -262,6 +254,13 @@ public partial class SticksView : UserControl
             if (_c.DeviceFor(st) is { } d) st.ScInstance = d.DefaultScInstance;
         }
         _c.Touch();
+    }
+
+    private void AdvancedToggle_Click(object s, RoutedEventArgs e)
+    {
+        bool open = AdvancedBody.Visibility != Visibility.Visible;
+        AdvancedBody.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        AdvancedToggle.Content = (open ? "▾ " : "▸ ") + "Advanced";
     }
 
     private void EventsToggle_Click(object s, RoutedEventArgs e)

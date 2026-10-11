@@ -27,8 +27,7 @@
                     <StackPanel>
                         <RadioButton x:Name="NavSticks" Style="{StaticResource Nav}" Content="Sticks" IsChecked="True" Checked="Nav_Checked" />
                         <RadioButton x:Name="NavBindings" Style="{StaticResource Nav}" Content="Bindings" Checked="Nav_Checked" />
-                        <RadioButton x:Name="NavProfiles" Style="{StaticResource Nav}" Content="Profiles" Checked="Nav_Checked" />
-                        <RadioButton x:Name="NavDeploy" Style="{StaticResource Nav}" Content="Deploy" Checked="Nav_Checked" />
+                        <RadioButton x:Name="NavSettings" Style="{StaticResource Nav}" Content="Settings" Checked="Nav_Checked" />
                     </StackPanel>
                 </DockPanel>
             </Border>
@@ -36,15 +35,13 @@
             <Grid Grid.Column="1">
                 <v:SticksView x:Name="SticksPage" />
                 <v:BindingsView x:Name="BindingsPage" Visibility="Collapsed" />
-                <v:ProfilesView x:Name="ProfilesPage" Visibility="Collapsed" />
-                <v:DeployView x:Name="DeployPage" Visibility="Collapsed" />
+                <v:SettingsView x:Name="SettingsPage" Visibility="Collapsed" />
             </Grid>
         </Grid>
 
         <Border Grid.Row="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="0,1,0,0" Padding="16,8">
             <DockPanel>
-                <CheckBox x:Name="OutputToggle" DockPanel.Dock="Right" Content="Keyboard output" Click="OutputToggle_Click" />
                 <StackPanel Orientation="Horizontal">
                     <TextBlock x:Name="StatusSticks" Style="{StaticResource Muted}" />
                     <TextBlock Text="  ·  " Style="{StaticResource Muted}" />

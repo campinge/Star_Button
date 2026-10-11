@@ -3,48 +3,74 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:ScMapper.App.Controls">
     <UserControl.Resources>
-        <DataTemplate x:Key="BoundRowTemplate">
-            <Border Background="{StaticResource BgBrush}" CornerRadius="6" Padding="10,5" Margin="0,0,0,4">
-                <DockPanel>
-                    <Button DockPanel.Dock="Right" Style="{StaticResource Flat}" Content="Remove" Tag="{Binding}"
-                            Click="RemoveBound_Click" />
-                    <TextBlock DockPanel.Dock="Right" Text="{Binding Mode}" Style="{StaticResource Muted}"
-                               VerticalAlignment="Center" Margin="0,0,10,0" />
-                    <TextBlock Text="{Binding Text}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                </DockPanel>
-            </Border>
-        </DataTemplate>
 
-        <!-- one binding tag: device label + input, lights up when the physical input is active -->
+        <!-- One binding as a chip: device badge, input, optional trigger-mode badge. Lights up while the input is held. -->
         <DataTemplate x:Key="TagTemplate">
-            <Border x:Name="tag" CornerRadius="5" Padding="7,2" Margin="0,5,5,0" BorderThickness="1"
-                    Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush}">
+            <Border x:Name="tag" CornerRadius="7" Padding="8,5" Margin="0,3,8,3" BorderThickness="1" Cursor="Hand"
+                    Background="{StaticResource Panel2Brush}" BorderBrush="{StaticResource BorderBrush}"
+                    MouseLeftButtonDown="Tag_MouseDown" Tag="{Binding}">
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock x:Name="kind" Text="{Binding Kind}" FontSize="10" FontWeight="Bold" Margin="0,0,6,0"
-                               VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" />
-                    <TextBlock x:Name="val" Text="{Binding Text}" FontSize="12" VerticalAlignment="Center" />
+                    <Border x:Name="badge" CornerRadius="4" Padding="5,1" Background="#2A3342" VerticalAlignment="Center">
+                        <TextBlock x:Name="kind" Text="{Binding Kind}" FontSize="10" FontWeight="Bold"
+                                   Foreground="{StaticResource MutedBrush}" />
+                    </Border>
+                    <TextBlock x:Name="val" Text="{Binding Text}" FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center" />
+                    <Border x:Name="modeBadge" Visibility="{Binding ModeVisibility}" CornerRadius="8" Padding="6,1"
+                            Margin="8,0,0,0" Background="{StaticResource AccentDimBrush}" VerticalAlignment="Center">
+                        <TextBlock x:Name="modeText" Text="{Binding ModeLabel}" FontSize="10" FontWeight="Bold"
+                                   Foreground="{StaticResource AccentBrush}" />
+                    </Border>
+                    <Button x:Name="rm" Content="✕" Tag="{Binding}" Click="TagRemove_Click" Style="{StaticResource Flat}"
+                            Padding="5,0" Margin="6,0,-4,0" FontSize="10" Opacity="0" VerticalAlignment="Center"
+                            Foreground="{StaticResource MutedBrush}" ToolTip="Remove this binding" />
                 </StackPanel>
             </Border>
             <DataTemplate.Triggers>
+                <Trigger SourceName="tag" Property="IsMouseOver" Value="True">
+                    <Setter TargetName="rm" Property="Opacity" Value="1" />
+                    <Setter TargetName="tag" Property="BorderBrush" Value="#5A6B85" />
+                </Trigger>
                 <DataTrigger Binding="{Binding Kind}" Value="KB">
-                    <Setter TargetName="tag" Property="Background" Value="#1B2D4A" />
+                    <Setter TargetName="badge" Property="Background" Value="#1B2D4A" />
                     <Setter TargetName="kind" Property="Foreground" Value="#6FA8FF" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Kind}" Value="PAD">
-                    <Setter TargetName="tag" Property="Background" Value="#1B3A2C" />
+                    <Setter TargetName="badge" Property="Background" Value="#1B3A2C" />
                     <Setter TargetName="kind" Property="Foreground" Value="#5FD08F" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Kind}" Value="JS">
-                    <Setter TargetName="tag" Property="Background" Value="#3E3115" />
+                    <Setter TargetName="badge" Property="Background" Value="#3E3115" />
                     <Setter TargetName="kind" Property="Foreground" Value="#F0B64A" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsDefault}" Value="True">
+                    <Setter TargetName="tag" Property="Opacity" Value="0.6" />
+                    <Setter TargetName="tag" Property="Background" Value="Transparent" />
+                    <Setter TargetName="tag" Property="ToolTip" Value="Game default - click to change how it triggers" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Selected}" Value="True">
+                    <Setter TargetName="tag" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                    <Setter TargetName="tag" Property="Opacity" Value="1" />
+                    <Setter TargetName="tag" Property="Background" Value="#16445F" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Lit}" Value="True">
                     <Setter TargetName="tag" Property="Background" Value="{StaticResource AccentBrush}" />
                     <Setter TargetName="tag" Property="BorderBrush" Value="White" />
-                    <Setter TargetName="kind" Property="Foreground" Value="Black" />
+                    <Setter TargetName="tag" Property="Opacity" Value="1" />
+                    <Setter TargetName="badge" Property="Background" Value="#0A2A3A" />
+                    <Setter TargetName="kind" Property="Foreground" Value="White" />
                     <Setter TargetName="val" Property="Foreground" Value="Black" />
+                    <Setter TargetName="modeBadge" Property="Background" Value="#0A2A3A" />
                 </DataTrigger>
             </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- One choice in the trigger-mode list of the side panel -->
+        <DataTemplate x:Key="ModeTemplate">
+            <StackPanel Margin="10,7">
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13" />
+                <TextBlock Text="{Binding Description}" Style="{StaticResource Muted}" FontSize="11.5"
+                           TextWrapping="Wrap" Margin="0,2,0,0" />
+            </StackPanel>
         </DataTemplate>
     </UserControl.Resources>
 
@@ -55,105 +81,140 @@
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="16" />
-            <ColumnDefinition Width="380" />
+            <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <!-- Header: one compact row. Profile, status, search, filter, read, deploy. -->
-        <Border Grid.ColumnSpan="3" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}"
+        <!-- Header, two rows: actions on top, the full status line below. -->
+        <Border Grid.ColumnSpan="2" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1" CornerRadius="8" Padding="8,6" Margin="0,0,0,10">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" MinWidth="120" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="140" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                <ComboBox x:Name="SetupCombo" Width="170" ToolTip="Active profile" SelectionChanged="SetupCombo_SelectionChanged" />
-                <Button x:Name="SetupMenuBtn" Grid.Column="1" Style="{StaticResource Flat}" Content="⋯" Padding="9,4"
-                        Margin="2,0,0,0" ToolTip="Profile actions" Click="SetupMenu_Click" FontSize="16">
-                    <Button.ContextMenu>
-                        <ContextMenu x:Name="SetupMenu">
-                            <MenuItem Header="New profile…" Click="SetupNew_Click" />
-                            <MenuItem Header="Duplicate" Click="SetupDuplicate_Click" />
-                            <MenuItem Header="Rename…" Click="SetupRename_Click" />
-                            <Separator />
-                            <MenuItem Header="Export to file…" Click="SetupExport_Click" />
-                            <MenuItem Header="Import from file…" Click="SetupImport_Click" />
-                            <Separator />
-                            <MenuItem Header="Delete" Click="SetupDelete_Click" />
-                        </ContextMenu>
-                    </Button.ContextMenu>
-                </Button>
-                <TextBlock x:Name="SyncStatus" Grid.Column="2" VerticalAlignment="Center" Margin="10,0,12,0"
-                           Style="{StaticResource Muted}" FontSize="12" />
+                    <ComboBox x:Name="SetupCombo" Width="190" ToolTip="Active profile" SelectionChanged="SetupCombo_SelectionChanged" />
+                    <Button x:Name="SetupMenuBtn" Grid.Column="1" Style="{StaticResource Flat}" Content="⋯" Padding="9,4"
+                            Margin="2,0,0,0" ToolTip="Profile actions" Click="SetupMenu_Click" FontSize="16">
+                        <Button.ContextMenu>
+                            <ContextMenu x:Name="SetupMenu">
+                                <MenuItem x:Name="MenuSave" Header="Save changes" Click="SetupSave_Click" />
+                                <MenuItem Header="Save as new profile…" Click="SetupSaveAs_Click" />
+                                <MenuItem x:Name="MenuRevert" Header="Discard unsaved changes" Click="SetupRevert_Click" />
+                                <Separator />
+                                <MenuItem Header="New empty profile…" Click="SetupNew_Click" />
+                                <MenuItem x:Name="MenuRename" Header="Rename…" Click="SetupRename_Click" />
+                                <Separator />
+                                <MenuItem Header="Export to file…" Click="SetupExport_Click" />
+                                <MenuItem Header="Import from file…" Click="SetupImport_Click" />
+                                <Separator />
+                                <MenuItem x:Name="MenuDelete" Header="Delete" Click="SetupDelete_Click" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
 
-                <Grid Grid.Column="3">
-                    <TextBox x:Name="Search" TextChanged="Filter_Changed" Padding="8,5" />
-                    <TextBlock x:Name="SearchHint" Text="Search actions…" IsHitTestVisible="False" Margin="11,0,0,0"
-                               VerticalAlignment="Center" Style="{StaticResource Muted}" />
+                    <Button x:Name="SaveBtn" Grid.Column="2" Content="💾 Save" Style="{StaticResource Accent}" Margin="8,0,0,0"
+                            Padding="10,5" Visibility="Collapsed" Click="SetupSave_Click"
+                            ToolTip="This profile has unsaved changes - save them (⋯ for “Save as new profile…”)" />
+
+                    <Grid Grid.Column="3" Margin="14,0,0,0">
+                        <TextBox x:Name="Search" TextChanged="Filter_Changed" Padding="8,5,30,5" />
+                        <TextBlock x:Name="SearchHint" Text="Search actions…" IsHitTestVisible="False" Margin="11,0,0,0"
+                                   VerticalAlignment="Center" Style="{StaticResource Muted}" />
+                        <Button x:Name="SearchClear" Content="✕" Style="{StaticResource Flat}" HorizontalAlignment="Right"
+                                VerticalAlignment="Center" Margin="0,0,3,0" Padding="6,2" FontSize="11"
+                                Foreground="{StaticResource MutedBrush}" ToolTip="Clear search" Visibility="Collapsed"
+                                Click="SearchClear_Click" />
+                    </Grid>
+
+                    <Button x:Name="ReadBtn" Grid.Column="4" Content="⟳ Read SC" Margin="14,0,0,0" Padding="10,5" Click="Read_Click"
+                            ToolTip="Replace this profile's bindings with what Star Citizen currently has" />
+                    <Grid Grid.Column="5" Margin="6,0,0,0">
+                        <Button x:Name="DeployBtn" Content="⇪ Deploy" Style="{StaticResource Accent}"
+                                Padding="10,5" Click="Deploy_Click" ToolTip="Write this profile to Star Citizen" />
+                        <!-- Not part of the button, so it stays fully visible while Deploy is greyed out. -->
+                        <Ellipse x:Name="DeployAlarm" Width="12" Height="12" Fill="{StaticResource BadBrush}"
+                                 Stroke="{StaticResource BgBrush}" StrokeThickness="2" HorizontalAlignment="Right"
+                                 VerticalAlignment="Top" Margin="0,-5,-5,0" Visibility="Collapsed" IsHitTestVisible="False" />
+                    </Grid>
                 </Grid>
-                <ComboBox x:Name="DeviceFilter" Grid.Column="4" Width="130" Margin="8,0,0,0" SelectionChanged="Filter_Changed" />
-                <CheckBox x:Name="OnlyBound" Grid.Column="5" Content="Bound" Margin="12,0,0,0" VerticalAlignment="Center"
-                          Click="Filter_Changed" ToolTip="Show only actions that have a binding" />
 
-                <Button x:Name="ReadBtn" Grid.Column="6" Content="⟳ Read SC" Margin="14,0,0,0" Padding="10,5" Click="Read_Click"
-                        ToolTip="Read the current Star Citizen controls into a new profile" />
-                <Button x:Name="DeployBtn" Grid.Column="7" Content="⇪ Deploy" Style="{StaticResource Accent}" Margin="6,0,0,0"
-                        Padding="10,5" Click="Deploy_Click" ToolTip="Write this profile to Star Citizen" />
-            </Grid>
+                <TextBlock x:Name="SyncStatus" Margin="2,8,0,0" Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" />
+            </StackPanel>
         </Border>
 
-        <!-- Left: action tree (the main thing) -->
+        <!-- Left: actions. Doppelklick = bind, Klick auf einen Chip = Details rechts. -->
         <DockPanel Grid.Row="1">
             <TextBlock x:Name="CatalogStatus" DockPanel.Dock="Bottom" Style="{StaticResource Muted}" FontSize="11"
                        Margin="2,6,0,0" TextTrimming="CharacterEllipsis" />
-            <ListBox x:Name="Tree" SelectionChanged="Tree_SelectionChanged" VirtualizingPanel.IsVirtualizing="True"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <TextBlock DockPanel.Dock="Bottom" Style="{StaticResource Muted}" FontSize="11" Margin="2,8,0,0" TextWrapping="Wrap"
+                       Text="Double-click an action to bind a key or stick button (hold two keys for a combination, Esc cancels). Click a chip to change how it triggers." />
+            <ListBox x:Name="Tree" SelectionChanged="Tree_SelectionChanged" MouseDoubleClick="Tree_DoubleClick"
+                     VirtualizingPanel.IsVirtualizing="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <Border x:Name="row" Margin="{Binding Pad}" Padding="8,5" CornerRadius="6" BorderThickness="2,0,0,0"
-                                BorderBrush="Transparent">
+                        <Border x:Name="row" Margin="{Binding Pad}" Padding="12,9" CornerRadius="8" BorderThickness="3,0,0,0"
+                                BorderBrush="Transparent" Background="Transparent">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" MinWidth="150" />
+                                    <ColumnDefinition Width="1.7*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding Glyph}" Width="16" Foreground="{StaticResource MutedBrush}"
-                                           VerticalAlignment="Top" Margin="0,2,0,0" />
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock x:Name="title" Text="{Binding Text}" FontWeight="{Binding Weight}"
-                                               Foreground="{Binding Fore}" TextTrimming="CharacterEllipsis" />
-                                    <ItemsControl ItemsSource="{Binding Tags}" ItemTemplate="{StaticResource TagTemplate}"
-                                                  Visibility="{Binding TagsVisibility}">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <WrapPanel />
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                    </ItemsControl>
+                                <TextBlock Text="{Binding Glyph}" Width="18" Foreground="{StaticResource MutedBrush}"
+                                           VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" Grid.ColumnSpan="{Binding TitleSpan}" VerticalAlignment="Center">
+                                    <TextBlock x:Name="title" Text="{Binding Text}" FontSize="{Binding TitleSize}"
+                                               FontWeight="{Binding Weight}" Foreground="{Binding Fore}"
+                                               TextWrapping="Wrap" />
+                                    <TextBlock x:Name="prompt" Visibility="Collapsed" Margin="0,5,0,0" FontSize="12"
+                                               Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap"
+                                               Text="Press a key or stick button · hold two to combine · Esc cancels" />
                                 </StackPanel>
-                                <Border x:Name="count" Grid.Column="2" Visibility="{Binding CountVisibility}"
-                                        Background="{StaticResource Panel2Brush}" CornerRadius="10" Padding="8,1"
-                                        Margin="8,0,0,0" VerticalAlignment="Top">
+                                <ItemsControl Grid.Column="2" ItemsSource="{Binding Tags}" ItemTemplate="{StaticResource TagTemplate}"
+                                              Visibility="{Binding TagsVisibility}" Margin="14,0,0,0" VerticalAlignment="Center">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                </ItemsControl>
+                                <TextBlock Grid.Column="2" Text="not bound" Style="{StaticResource Muted}" FontSize="12"
+                                           FontStyle="Italic" Margin="14,0,0,0" VerticalAlignment="Center"
+                                           Visibility="{Binding NoneVisibility}" />
+                                <Border x:Name="count" Grid.Column="3" Visibility="{Binding CountVisibility}"
+                                        Background="{StaticResource Panel2Brush}" CornerRadius="10" Padding="9,2"
+                                        Margin="10,0,0,0" VerticalAlignment="Center">
                                     <TextBlock Text="{Binding Count}" FontSize="12" FontWeight="SemiBold"
                                                Foreground="{StaticResource MutedBrush}" x:Name="countText" />
                                 </Border>
                             </Grid>
                         </Border>
                         <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding Kind}" Value="0">
+                                <Setter TargetName="row" Property="Background" Value="{StaticResource Panel2Brush}" />
+                                <Setter TargetName="row" Property="Margin" Value="0,8,0,2" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Kind}" Value="2">
+                                <Setter TargetName="row" Property="Background" Value="{StaticResource PanelBrush}" />
+                            </DataTrigger>
                             <DataTrigger Binding="{Binding HasBound}" Value="True">
                                 <Setter TargetName="count" Property="Background" Value="{StaticResource AccentDimBrush}" />
                                 <Setter TargetName="countText" Property="Foreground" Value="{StaticResource TextBrush}" />
                             </DataTrigger>
-                            <DataTrigger Binding="{Binding Lit}" Value="True">
+                            <DataTrigger Binding="{Binding Capturing}" Value="True">
+                                <Setter TargetName="prompt" Property="Visibility" Value="Visible" />
+                                <Setter TargetName="row" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
                                 <Setter TargetName="row" Property="Background" Value="#16445F" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Lit}" Value="True">
+                                <Setter TargetName="row" Property="Background" Value="#12384F" />
                                 <Setter TargetName="row" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
                                 <Setter TargetName="count" Property="Background" Value="{StaticResource AccentBrush}" />
                                 <Setter TargetName="countText" Property="Foreground" Value="Black" />
@@ -163,83 +224,42 @@
                 </ListBox.ItemTemplate>
             </ListBox>
         </DockPanel>
-        <!-- Right: compact detail -->
-        <ScrollViewer Grid.Row="1" Grid.Column="2" VerticalScrollBarVisibility="Auto">
-            <StackPanel>
-                <TextBlock x:Name="Hint" Style="{StaticResource Muted}" Margin="0,40,0,0" HorizontalAlignment="Center"
-                           TextAlignment="Center" TextWrapping="Wrap"
-                           Text="Pick an action to change its keyboard, mouse, gamepad and joystick bindings." />
 
-                <StackPanel x:Name="Detail" Visibility="Collapsed">
-                    <Border Style="{StaticResource Card}" Padding="14">
+        <!-- Right: details of the selected chip. Only there while a chip is selected. -->
+        <Border x:Name="Panel" Grid.Row="1" Grid.Column="1" Width="340" Margin="14,0,0,0" Visibility="Collapsed"
+                Style="{StaticResource Card}" Padding="16">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource Flat}" Click="PanelClose_Click"
+                                ToolTip="Close" Padding="6,2" />
+                        <TextBlock Style="{StaticResource H2}" Text="BINDING" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <TextBlock x:Name="PanelAction" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0" />
+                    <TextBlock x:Name="PanelPath" Style="{StaticResource Muted}" FontSize="11.5" TextWrapping="Wrap" Margin="0,3,0,0" />
+
+                    <Border Background="{StaticResource BgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                            CornerRadius="8" Padding="12,10" Margin="0,14,0,0">
                         <StackPanel>
-                            <TextBlock x:Name="ActTitle" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
-                            <TextBlock x:Name="ActPath" Style="{StaticResource Muted}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" />
-                            <TextBlock x:Name="ActDesc" Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12" />
-                            <TextBlock x:Name="ActInSc" Style="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
-                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                <TextBlock Text="Mode" VerticalAlignment="Center" Style="{StaticResource Muted}" Margin="0,0,8,0" />
-                                <ComboBox x:Name="ModeCombo" Width="160"
-                                          ToolTip="Activation mode written with new bindings (experimental except 'default')" />
-                            </StackPanel>
-                            <TextBlock x:Name="Conflicts" Foreground="{StaticResource WarnBrush}" TextWrapping="Wrap" FontSize="12"
-                                       Margin="0,8,0,0" Visibility="Collapsed" />
+                            <TextBlock x:Name="PanelInput" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock x:Name="PanelSource" Style="{StaticResource Muted}" FontSize="11.5" TextWrapping="Wrap"
+                                       Margin="0,3,0,0" />
                         </StackPanel>
                     </Border>
 
-                    <!-- Keyboard + mouse -->
-                    <Border Style="{StaticResource Card}" Margin="0,10,0,0" Padding="14">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource H2}" Text="KEYBOARD &amp; MOUSE" />
-                            <TextBlock x:Name="KbmDefault" Style="{StaticResource Muted}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" />
-                            <ItemsControl x:Name="KbmList" Margin="0,8,0,0" ItemTemplate="{StaticResource BoundRowTemplate}" />
-                            <TextBlock x:Name="KbmNone" Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,0" Text="Default applies." />
-                            <WrapPanel Margin="0,8,0,0">
-                                <c:KeyCaptureBox x:Name="KbmKey" Width="150" Margin="0,0,0,6" />
-                                <Button Content="✕" Style="{StaticResource Flat}" Click="KbmKeyClear_Click" Margin="0,0,0,6" />
-                                <ComboBox x:Name="KbmMouse" Width="120" Margin="4,0,8,6" />
-                                <Button Content="Bind" Style="{StaticResource Accent}" Click="BindKbm_Click" Margin="0,0,0,6" />
-                            </WrapPanel>
-                        </StackPanel>
-                    </Border>
+                    <TextBlock Style="{StaticResource H2}" Text="HOW SHOULD IT TRIGGER?" Margin="0,18,0,6" />
+                    <ListBox x:Name="ModeList" ItemTemplate="{StaticResource ModeTemplate}" SelectionChanged="ModeList_SelectionChanged" />
+                    <TextBlock x:Name="PanelModeNote" Style="{StaticResource Muted}" FontSize="11.5" TextWrapping="Wrap"
+                               Margin="0,8,0,0" />
 
-                    <!-- Gamepad -->
-                    <Border Style="{StaticResource Card}" Margin="0,10,0,0" Padding="14">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource H2}" Text="GAMEPAD" />
-                            <TextBlock x:Name="PadDefault" Style="{StaticResource Muted}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" />
-                            <ItemsControl x:Name="PadList" Margin="0,8,0,0" ItemTemplate="{StaticResource BoundRowTemplate}" />
-                            <TextBlock x:Name="PadNone" Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,0" Text="Default applies." />
-                            <WrapPanel Margin="0,8,0,0">
-                                <ComboBox x:Name="PadMod" Width="130" ToolTip="Optional modifier" Margin="0,0,6,6" />
-                                <ComboBox x:Name="PadInput" Width="130" Margin="0,0,8,6" />
-                                <Button Content="Bind" Style="{StaticResource Accent}" Click="BindPad_Click" Margin="0,0,0,6" />
-                            </WrapPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Joystick -->
-                    <Border Style="{StaticResource Card}" Margin="0,10,0,0" Padding="14">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource H2}" Text="JOYSTICK" />
-                            <TextBlock x:Name="JsDefault" Style="{StaticResource Muted}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" />
-                            <ItemsControl x:Name="BoundList" Margin="0,8,0,0" ItemTemplate="{StaticResource BoundRowTemplate}" />
-                            <TextBlock x:Name="NoneBound" Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,0" Text="Default applies." />
-                            <Button x:Name="CaptureBtn" Style="{StaticResource Accent}" Content="Press a button or move an axis…"
-                                    Click="Capture_Click" Margin="0,8,0,0" HorizontalAlignment="Left" />
-                            <TextBlock x:Name="CaptureHint" Foreground="{StaticResource AccentBrush}" Margin="0,6,0,0"
-                                       Visibility="Collapsed" Text="Waiting for a button press or axis movement on any stick…" />
-                            <WrapPanel Margin="0,8,0,0">
-                                <ComboBox x:Name="StickCombo" Width="170" Margin="0,0,6,6" SelectionChanged="StickCombo_SelectionChanged" />
-                                <ComboBox x:Name="InputCombo" Width="110" Margin="0,0,8,6" />
-                                <Button Content="Bind" Click="BindManual_Click" Margin="0,0,0,6" />
-                            </WrapPanel>
-                        </StackPanel>
-                    </Border>
+                    <StackPanel Margin="0,18,0,0">
+                        <Button Content="Bind a different input…" Click="PanelRebind_Click" HorizontalAlignment="Stretch"
+                                ToolTip="Press the new key or stick button for this action" />
+                        <Button Content="Remove this binding" Style="{StaticResource Danger}" Click="PanelRemove_Click"
+                                HorizontalAlignment="Stretch" Margin="0,8,0,0" />
+                    </StackPanel>
                 </StackPanel>
-
-                <c:ButtonInspector x:Name="Inspector" Margin="0,12,0,0" Visibility="Collapsed" />
-            </StackPanel>
-        </ScrollViewer>
+            </ScrollViewer>
+        </Border>
     </Grid>
 </UserControl>

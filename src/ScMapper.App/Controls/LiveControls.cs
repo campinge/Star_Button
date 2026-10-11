@@ -21,8 +21,19 @@ public static class InputNames
         ["rotz"] = "Axis Rz", ["slider1"] = "Slider 1", ["slider2"] = "Slider 2",
     };
 
+    private static readonly Dictionary<string, string> Mods = new()
+    {
+        ["lshift"] = "Left Shift", ["rshift"] = "Right Shift", ["lctrl"] = "Left Ctrl", ["rctrl"] = "Right Ctrl",
+        ["lalt"] = "Left Alt", ["ralt"] = "Right Alt",
+    };
+
+    public static string ModifierName(string token) => Mods.GetValueOrDefault(token.ToLowerInvariant(), token);
+
     public static string Pretty(string input)
     {
+        // "lshift+button1": keyboard modifier in front of a stick input.
+        var (mods, bare) = ScMapper.Core.Sc.ScInputCodes.SplitJsInput(input);
+        if (mods.Count > 0) return string.Join(" + ", mods.Select(ModifierName).Append(Pretty(bare)));
         if (Axes.TryGetValue(input, out var axis)) return axis;
         if (input.StartsWith("button")) return "Button " + input[6..];
         if (input.StartsWith("hat"))
@@ -270,6 +281,12 @@ public sealed class KeyCaptureBox : TextBox
         Key.LeftAlt => "lalt", Key.RightAlt => "ralt",
         _ => null,
     };
+
+    /// <summary>App name of a key or modifier ("lctrl", "r", "f5"), null for keys that cannot be bound.</summary>
+    internal static string? TokenOf(Key k) => ModName(k) ?? Name(k);
+
+    internal static bool IsModifierToken(string t) =>
+        t is "lshift" or "rshift" or "lctrl" or "rctrl" or "lalt" or "ralt";
 
     private readonly List<string> _mods = new();
 

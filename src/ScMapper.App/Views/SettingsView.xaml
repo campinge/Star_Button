@@ -1,0 +1,152 @@
+<UserControl x:Class="ScMapper.App.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <!-- thin divider between the rows of a card -->
+        <Style x:Key="RowLine" TargetType="Border">
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,1,0,0" />
+            <Setter Property="Margin" Value="0,16,0,0" />
+            <Setter Property="Padding" Value="0,16,0,0" />
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,20,24,20" MaxWidth="960" HorizontalAlignment="Stretch">
+            <StackPanel Margin="0,0,0,16">
+                <TextBlock Style="{StaticResource H1}" Text="Settings" />
+                <TextBlock Style="{StaticResource Muted}" Margin="0,2,0,0" Text="Star Citizen, the app and your backups" />
+            </StackPanel>
+
+            <!-- Star Citizen -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="Star Citizen" Margin="0,0,0,12" />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                            <TextBlock Text="Session" FontWeight="SemiBold" FontSize="14" />
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,2,0,0" TextWrapping="Wrap"
+                                       Text="Where Deploy writes to and Read from Star Citizen reads from." />
+                        </StackPanel>
+                        <ComboBox x:Name="InstallCombo" Grid.Column="1" Width="420" MinHeight="44" VerticalAlignment="Center"
+                                  SelectionChanged="InstallCombo_SelectionChanged">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel MinHeight="30" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Sub}" Style="{StaticResource Muted}" FontSize="11.5"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </Grid>
+                    <TextBlock x:Name="SessionHint" Margin="0,10,0,0" TextWrapping="Wrap"
+                               Foreground="{StaticResource WarnBrush}" Visibility="Collapsed"
+                               Text="No Star Citizen installation found. Choose the folder that contains LIVE." />
+
+                    <Border Style="{StaticResource RowLine}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                <TextBlock Text="Action list" FontWeight="SemiBold" FontSize="14" />
+                                <TextBlock x:Name="CatalogInfo" Style="{StaticResource Muted}" Margin="0,2,0,0"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="Re-read" MinHeight="38" MinWidth="96" VerticalAlignment="Center"
+                                    Click="Reload_Click" ToolTip="Read the action list again from the game files" />
+                        </Grid>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- App -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="App" Margin="0,0,0,12" />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                            <TextBlock Text="Start with Windows" FontWeight="SemiBold" FontSize="14" />
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,2,0,0" Text="Starts minimized in the tray." />
+                        </StackPanel>
+                        <CheckBox x:Name="AutostartCheck" Grid.Column="1" VerticalAlignment="Center" Click="Autostart_Click">
+                            <CheckBox.LayoutTransform>
+                                <ScaleTransform ScaleX="1.3" ScaleY="1.3" />
+                            </CheckBox.LayoutTransform>
+                        </CheckBox>
+                    </Grid>
+
+                    <Border Style="{StaticResource RowLine}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                <TextBlock Text="Close button (X)" FontWeight="SemiBold" FontSize="14" />
+                                <TextBlock Style="{StaticResource Muted}" Margin="0,2,0,0"
+                                           Text="What happens when you close the window." />
+                            </StackPanel>
+                            <ComboBox x:Name="CloseCombo" Grid.Column="1" Width="260" MinHeight="38" VerticalAlignment="Center"
+                                      SelectionChanged="CloseCombo_SelectionChanged">
+                                <ComboBoxItem Content="Ask me" />
+                                <ComboBoxItem Content="Keep running in the tray" />
+                                <ComboBoxItem Content="Exit the app" />
+                            </ComboBox>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- Backups -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel>
+                    <Grid Margin="0,0,0,12">
+                        <TextBlock Style="{StaticResource H2}" Text="Backups" />
+                        <TextBlock x:Name="BackupCount" Style="{StaticResource Muted}"
+                                   HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock x:Name="NoBackups" Style="{StaticResource Muted}" Visibility="Collapsed"
+                               Text="No backups yet. One is made before every deploy." />
+                    <ListBox x:Name="Backups" MaxHeight="280">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="12,9">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Title}" FontSize="14" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Sub}" Style="{StaticResource Muted}"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <StackPanel x:Name="BackupActions" Orientation="Horizontal" Margin="0,14,0,0">
+                        <Button Content="Restore" Style="{StaticResource Accent}" MinHeight="38" MinWidth="96"
+                                Click="Restore_Click"
+                                ToolTip="Copy the selected backup back as Star Citizen's actionmaps.xml" />
+                        <Button Content="Show in folder" MinHeight="38" MinWidth="96" Margin="8,0,0,0" Click="OpenFolder_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="BackupResult" Margin="0,12,0,0" TextWrapping="Wrap" Visibility="Collapsed"
+                               Foreground="{StaticResource AccentBrush}" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

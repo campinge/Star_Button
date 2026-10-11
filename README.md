@@ -14,10 +14,14 @@ and writes the Star Citizen bindings for the *current* `jsN` numbers into `actio
   game build, so a patch that adds actions shows up after a refresh. Bind by pressing a button on a stick.
   Conflicts, defaults and what is currently in your `actionmaps.xml` are shown. Pressing any physical button
   shows everything that lives on it.
-- **Profiles** – controller profiles (e.g. "Comms") can be assigned to any stick, duplicated, exported/imported.
-  Existing Star Citizen files (current `actionmaps.xml`, exported layouts, backups) can be imported or restored.
-- **Deploy** – resolves stick → `jsN`, merges into `actionmaps.xml` (backup first, unknown nodes kept, warns while
-  the game runs, preview before writing).
+- **Profiles** (Bindings tab) – a profile is a complete setup (keyboard & mouse, gamepad, every stick). Switch,
+  create, duplicate, rename, delete and export/import from the header of the Bindings tab. "Read from Star
+  Citizen" turns the current `actionmaps.xml` into a profile.
+- **Deploy** (Bindings tab) – resolves stick → `jsN`, merges into `actionmaps.xml` (backup first, unknown nodes
+  kept, warns while the game runs, confirmation shows what will be written).
+- **Settings** – the Star Citizen session to deploy to and read from (found automatically, or pick a folder by
+  hand), re-reading the action list, start with Windows, what the window's X does (ask / keep running in the tray /
+  exit), and restoring `actionmaps.xml` backups.
 
 ## Build and run
 

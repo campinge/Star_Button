@@ -16,6 +16,27 @@ public static partial class ScInputCodes
     public static bool IsKbm(string input) => KbmPrefix().IsMatch(input);
     public static bool IsGamepad(string input) => GamepadPrefix().IsMatch(input);
 
+    /// <summary>Keyboard modifiers Star Citizen accepts in front of a joystick input ("js4_lshift+button1").</summary>
+    public static readonly string[] KeyModifiers = { "lshift", "rshift", "lctrl", "rctrl", "lalt", "ralt" };
+
+    public static bool IsKeyModifier(string token) =>
+        KeyModifiers.Contains(token, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>"lshift+button1" → (["lshift"], "button1"); an input without modifiers comes back unchanged.</summary>
+    public static (IReadOnlyList<string> Modifiers, string Input) SplitJsInput(string input)
+    {
+        var parts = input.Split('+');
+        int n = 0;
+        while (n < parts.Length - 1 && IsKeyModifier(parts[n])) n++;
+        if (n == 0) return (Array.Empty<string>(), input);
+        return (parts.Take(n).Select(p => p.ToLowerInvariant()).ToList(), string.Join("+", parts.Skip(n)));
+    }
+
+    /// <summary>The input of a joystick binding with its keyboard modifiers in front.</summary>
+    public static string ComposeJsInput(IEnumerable<string?> modifiers, string input) =>
+        string.Concat(modifiers.Where(m => !string.IsNullOrEmpty(m) && IsKeyModifier(m!))
+            .Select(m => m!.ToLowerInvariant()).Distinct().Select(m => m + "+")) + input;
+
     /// <summary>Converts the app's key names (KeyCombo) to the tokens SC uses in its profile.</summary>
     public static string ToScToken(string name)
     {

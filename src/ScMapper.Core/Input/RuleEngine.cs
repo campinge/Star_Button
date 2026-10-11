@@ -20,7 +20,9 @@ public sealed class RuleEngine : IDisposable
     private readonly ConcurrentDictionary<(Guid, string), IReadOnlyList<KeyStroke>> _held = new();
     private readonly Task _worker;
 
-    public bool Enabled { get; set; } = true;
+    /// <summary>Resolves the key combo (app notation) of a game action, "map", "action".</summary>
+    public Func<string, string, string?>? ActionKey { get; set; }
+
     public int TapMilliseconds { get; set; } = 35;
     public event Action<FiredRule>? Fired;
 
@@ -40,11 +42,12 @@ public sealed class RuleEngine : IDisposable
 
     public void Handle(InputEvent e)
     {
-        if (!Enabled) return;
         var stick = _stickForDevice(e.InstanceGuid);
         if (stick is null) return;
         var prof = _store.Profile(stick.ProfileId);
-        if (prof is null || !prof.Rules.TryGetValue(e.Input, out var rule)) return;
+        if (prof is null) return;
+        HandleActions(stick, prof, e);
+        if (!prof.Rules.TryGetValue(e.Input, out var rule)) return;
         var held = _held;
         var id = (stick.Id, e.Input);
 
@@ -73,15 +76,60 @@ public sealed class RuleEngine : IDisposable
         }
     }
 
+    private void HandleActions(StickRecord stick, ControllerProfile prof, InputEvent e)
+    {
+        List<ButtonAction> mine = prof.Actions.Where(a => a.Input == e.Input).ToList();
+        foreach (var a in mine)
+        {
+            var heldId = (stick.Id, $"{e.Input}#{a.Id:N}");
+            if (a.Trigger == ButtonTrigger.Held && !e.Pressed)
+            {
+                // Always let go, even if the modifier was released first.
+                if (_held.TryRemove(heldId, out var heldKeys)) _queue.Writer.TryWrite(() => _output.Up(heldKeys));
+                continue;
+            }
+            bool edge = a.Trigger switch
+            {
+                ButtonTrigger.Pressed or ButtonTrigger.Held => e.Pressed,
+                ButtonTrigger.Released => !e.Pressed,
+                _ => false,
+            };
+            if (!edge) continue;
+
+            string? combo = a.Keys ?? (a.Map != null && a.Action != null ? ActionKey?.Invoke(a.Map, a.Action) : null);
+            if (!KeyCombo.TryParse(combo, out var keys, out _)) continue;
+            if (a.Trigger == ButtonTrigger.Held)
+            {
+                _held[heldId] = keys;
+                _queue.Writer.TryWrite(() => _output.Down(keys));
+            }
+            else Tap(keys);
+            var what = a.Action ?? combo;
+            Fired?.Invoke(new FiredRule(stick.Name, e.Input, $"{(e.Pressed ? "press" : "release")} → {what} ({combo})", e.Utc));
+        }
+    }
+
     private void Tap(IReadOnlyList<KeyStroke> keys)
     {
         _queue.Writer.TryWrite(() =>
         {
+            // A button held as a keyboard modifier ("layer" button) would turn this tap into shift+key for the
+            // game: lift it for the tap and put it back afterwards.
+            var layer = HeldLayerModifiers();
+            var lifted = layer.Where(m => !keys.Any(k => k.Scan == m.Scan && k.Extended == m.Extended)).ToList();
+            if (lifted.Count > 0) _output.Up(lifted);
             _output.Down(keys);
             Thread.Sleep(TapMilliseconds);
             _output.Up(keys);
+            // Only what is still held now: the button may have been released during the tap.
+            var restore = HeldLayerModifiers().Where(m => layer.Contains(m)).ToList();
+            if (restore.Count > 0) _output.Down(restore);
         });
     }
+
+    /// <summary>Keys of held actions that consist of modifiers only (a button used as shift/ctrl/alt).</summary>
+    private List<KeyStroke> HeldLayerModifiers() =>
+        _held.Values.Where(v => v.Count > 0 && v.All(k => k.IsModifier)).SelectMany(v => v).Distinct().ToList();
 
     /// <summary>Releases anything still held (used when disabling output or shutting down).</summary>
     public void ReleaseAll()

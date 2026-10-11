@@ -170,24 +170,4 @@ public class ControllerTests
         WaitFor(() => output.Snapshot().Length >= 2);
         Assert.Equal("up:18", output.Snapshot()[1]);
     }
-
-    [Fact]
-    public void Disabling_output_releases_held_keys()
-    {
-        var hub = new FakeHub();
-        var d = Dev(0, 1, 1);
-        hub.List.Add(d);
-        var output = new FakeOutput();
-        using var c = new AppController(TmpStore(), hub, output);
-        c.Reconcile();
-        var prof = c.Store.Profile(c.Store.Data.Sticks[0].ProfileId)!;
-        c.SetRule(prof, "button1", new ButtonRule { OnPress = new KeyAction { Keys = "o", Hold = true } });
-        hub.Raise(d.InstanceGuid, "button1", true);
-        c.SetOutputEnabled(false);
-        WaitFor(() => output.Snapshot().Length >= 2);
-        Assert.Equal(new[] { "down:18", "up:18" }, output.Snapshot());
-        hub.Raise(d.InstanceGuid, "button1", false);
-        Thread.Sleep(50);
-        Assert.Equal(2, output.Snapshot().Length);
-    }
 }

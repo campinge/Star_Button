@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Threading;
 using ScMapper.Core;
+using ScMapper.Core.Model;
 using ScMapper.Core.Sc;
 
 namespace ScMapper.App;
@@ -21,13 +22,28 @@ public partial class MainWindow : Window
         _c = c;
         SticksPage.Attach(c);
         BindingsPage.Attach(c);
-        ProfilesPage.Attach(c);
-        DeployPage.Attach(c);
+        SettingsPage.Attach(c);
+        BindingsPage.DeployDueChanged += due => NavBindings.Content = NavLabel("Bindings", due);
         c.Changed += () => Dispatcher.BeginInvoke(UpdateStatus);
         c.RuleFired += f => Dispatcher.BeginInvoke(() => StatusLast.Text = $"{f.StickName} {Controls.InputNames.Pretty(f.Input)}: {f.Description}");
         _status.Tick += (_, _) => UpdateStatus();
         _status.Start();
         UpdateStatus();
+    }
+
+    /// <summary>Navigation label; with <paramref name="alarm"/> a red dot says "something has to be deployed".</summary>
+    private static object NavLabel(string text, bool alarm)
+    {
+        if (!alarm) return text;
+        var row = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
+        row.Children.Add(new System.Windows.Controls.TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(new System.Windows.Shapes.Ellipse
+        {
+            Width = 9, Height = 9, Margin = new Thickness(8, 1, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+            Fill = (System.Windows.Media.Brush)Application.Current.FindResource("BadBrush"),
+            ToolTip = "Changes are waiting to be deployed to Star Citizen",
+        });
+        return row;
     }
 
     private void UpdateStatus()
@@ -39,7 +55,6 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(StatusLast.Text)) StatusLast.Text = "No keyboard rule fired yet";
         StatusGame.Text = ScLocator.IsGameRunning() ? "Star Citizen running"
             : _c.Install != null ? $"Star Citizen {_c.Install.ReadVersion() ?? ""} ({_c.Install.Channel})" : "Star Citizen not found";
-        OutputToggle.IsChecked = _c.Engine.Enabled;
     }
 
     private void Nav_Checked(object s, RoutedEventArgs e)
@@ -47,11 +62,8 @@ public partial class MainWindow : Window
         if (SticksPage == null) return;
         SticksPage.Visibility = NavSticks.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         BindingsPage.Visibility = NavBindings.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-        ProfilesPage.Visibility = NavProfiles.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-        DeployPage.Visibility = NavDeploy.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        SettingsPage.Visibility = NavSettings.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
-
-    private void OutputToggle_Click(object s, RoutedEventArgs e) => _c.SetOutputEnabled(OutputToggle.IsChecked == true);
 
     public void SelectStick(int index) => SticksPage.SelectIndex(index);
     public void SelectInput(string input) => SticksPage.SelectInput(input);
@@ -59,17 +71,32 @@ public partial class MainWindow : Window
 
     public void ShowPage(string name)
     {
-        (name switch { "bindings" => NavBindings, "profiles" => NavProfiles, "deploy" => NavDeploy, _ => NavSticks }).IsChecked = true;
+        (name switch { "bindings" => NavBindings, "settings" => NavSettings, _ => NavSticks }).IsChecked = true;
     }
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        if (!ReallyClose && _c.Store.Data.Settings.MinimizeToTray)
+        if (ReallyClose) { base.OnClosing(e); return; }
+
+        var settings = _c.Store.Data.Settings;
+        var action = settings.OnClose;
+        if (action == CloseAction.Ask)
         {
-            e.Cancel = true;
-            Hide();
-            return;
+            var answer = Controls.CloseDialog.Ask(this);
+            if (answer == null) { e.Cancel = true; return; }
+            action = answer.Value.Action;
+            if (answer.Value.Remember)
+            {
+                settings.OnClose = action;
+                _c.Store.Save();
+                _c.Touch();
+            }
         }
-        base.OnClosing(e);
+
+        e.Cancel = true;
+        if (action == CloseAction.Exit)
+            Dispatcher.BeginInvoke(() => ((App)Application.Current).Quit());
+        else
+            Hide();
     }
 }

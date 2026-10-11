@@ -13,12 +13,16 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource H1}" Text="Sticks" />
                     <TextBlock x:Name="CountText" Style="{StaticResource Muted}" Margin="0,2,0,0" />
                 </StackPanel>
-                <ComboBox x:Name="StickPicker" Grid.Column="1" Width="420" MinHeight="44" VerticalAlignment="Center"
+                <Button Grid.Column="1" HorizontalAlignment="Left" Content="Profile manager" MinHeight="44" Padding="16,6"
+                        Margin="0,0,10,0" Click="ProfileManager_Click"
+                        ToolTip="Assign a profile to each connected stick (press a button on a stick to find it)" />
+                <ComboBox x:Name="StickPicker" Grid.Column="2" Width="420" MinHeight="44" VerticalAlignment="Center"
                           SelectionChanged="StickPicker_SelectionChanged" ToolTip="Choose a stick">
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
@@ -70,30 +74,30 @@
                         </Grid>
                         <TextBlock x:Name="ModelText" Style="{StaticResource Muted}" FontSize="12" Margin="2,6,0,0" />
 
-                        <Grid Margin="0,16,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="16" />
-                                <ColumnDefinition Width="170" />
-                                <ColumnDefinition Width="16" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel>
-                                <TextBlock Style="{StaticResource H2}" Text="Controller profile" Margin="0,0,0,6" />
-                                <ComboBox x:Name="ProfileCombo" MinHeight="38" SelectionChanged="ProfileCombo_SelectionChanged" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="2">
-                                <TextBlock Style="{StaticResource H2}" Text="Star Citizen number" Margin="0,0,0,6"
-                                           ToolTip="Auto = position in the DirectInput list, which is what Star Citizen uses" />
-                                <ComboBox x:Name="InstanceCombo" MinHeight="38" SelectionChanged="InstanceCombo_SelectionChanged" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Bottom">
-                                <Button x:Name="IdentifyBtn" Content="Identify" MinHeight="38" MinWidth="96" Click="Identify_Click"
-                                        ToolTip="Press a button on the physical stick to link it to this entry" />
-                                <Button x:Name="ForgetBtn" Style="{StaticResource Danger}" Content="Forget" MinHeight="38" MinWidth="84"
-                                        Margin="8,0,0,0" Click="Forget_Click" ToolTip="Remove this stick (its profile is kept)" />
-                            </StackPanel>
-                        </Grid>
+                        <!-- rarely needed: kept out of the way. Profiles are assigned in the Profile manager. -->
+                        <Button x:Name="AdvancedToggle" Style="{StaticResource Flat}" HorizontalAlignment="Left"
+                                Content="▸ Advanced" Click="AdvancedToggle_Click" Padding="0,4" Margin="0,10,0,0" />
+                        <StackPanel x:Name="AdvancedBody" Visibility="Collapsed">
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="170" />
+                                    <ColumnDefinition Width="16" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource H2}" Text="Star Citizen number" Margin="0,0,0,6"
+                                               ToolTip="Auto = position in the DirectInput list, which is what Star Citizen uses" />
+                                    <ComboBox x:Name="InstanceCombo" MinHeight="38" SelectionChanged="InstanceCombo_SelectionChanged" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom">
+                                    <Button x:Name="IdentifyBtn" Content="Identify" MinHeight="38" MinWidth="96" Click="Identify_Click"
+                                            ToolTip="Press a button on the physical stick to link it to this entry" />
+                                    <Button x:Name="ForgetBtn" Style="{StaticResource Danger}" Content="Forget" MinHeight="38" MinWidth="84"
+                                            Margin="8,0,0,0" Click="Forget_Click" ToolTip="Remove this stick (its profile is kept)" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
 
                         <Border x:Name="RemapBox" Visibility="Collapsed" Margin="0,16,0,0" Padding="14"
                                 Background="#2A2210" BorderBrush="{StaticResource WarnBrush}" BorderThickness="1" CornerRadius="8">

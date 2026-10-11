@@ -276,9 +276,11 @@ public class CoreTests
 """);
         using var c = new AppController(new AppStore(Tmp("store")), new FakeHub(), new FakeOutput());
         var (imported, _) = c.ImportFromActionMaps(ActionMapsFile.Load(path));
-        Assert.Equal(2, imported);
+        Assert.Equal(3, imported);
         Assert.Contains(c.KeyboardMouseProfile.Binds, b => b.Input == "mo1_mouse1");
         Assert.Contains(c.GamepadProfile.Binds, b => b.Input == "gp1_triggerr_btn");
+        // "kb1_ " is the game's "unbound" marker; it is imported so a removed default stays removed.
+        Assert.Contains(c.KeyboardMouseProfile.Binds, b => b.IsUnbound);
     }
 
     [Fact]
@@ -298,7 +300,8 @@ public class CoreTests
 
         using var c = new AppController(store, hub, new FakeOutput());
         c.Reconcile();
-        Assert.Single(c.Setups);
+        // The old data becomes "Default"; the built-in "Empty" profile ships next to it.
+        Assert.Equal(new[] { "Default", "Empty" }, c.Setups.Select(s => s.Name).ToArray());
         Assert.Equal("Default", c.ActiveSetup.Name);
         Assert.Equal("kb1_f4", c.KeyboardMouseProfile.Binds.Single().Input);
         Assert.DoesNotContain(store.Data.Profiles, p => p.IsSystem);
@@ -322,9 +325,10 @@ public class CoreTests
         Assert.Empty(c.KeyboardMouseProfile.Binds);
 
         Assert.True(c.DeleteSetup(fresh));
-        Assert.Equal(2, c.Setups.Count);
+        Assert.Equal(3, c.Setups.Count);                                  // Default, its copy, Empty
         Assert.NotNull(c.ActiveSetup);
-        Assert.False(c.Setups.Count == 1 && c.DeleteSetup(c.Setups[0]));
+        Assert.False(c.DeleteSetup(c.Setups.First(s => s.IsGameProfile)));   // Default and Empty are protected
+        Assert.False(c.DeleteSetup(c.Setups.First(s => s.IsBuiltIn)));
     }
 
     [Fact]

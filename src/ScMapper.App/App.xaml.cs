@@ -67,9 +67,6 @@ public partial class App : Application
             ContextMenuStrip = new System.Windows.Forms.ContextMenuStrip(),
         };
         _tray.ContextMenuStrip.Items.Add("Open Star Button", null, (_, _) => ShowWindow());
-        var toggle = new System.Windows.Forms.ToolStripMenuItem("Keyboard output") { CheckOnClick = true, Checked = _controller!.Engine.Enabled };
-        toggle.Click += (_, _) => _controller.SetOutputEnabled(toggle.Checked);
-        _tray.ContextMenuStrip.Items.Add(toggle);
         _tray.ContextMenuStrip.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         _tray.ContextMenuStrip.Items.Add("Quit", null, (_, _) => Quit());
         _tray.DoubleClick += (_, _) => ShowWindow();
@@ -103,7 +100,7 @@ public partial class App : Application
         _window.Activate();
     }
 
-    private void Quit()
+    internal void Quit()
     {
         _window!.ReallyClose = true;
         _tray!.Visible = false;

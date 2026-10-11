@@ -21,6 +21,35 @@ public sealed class ButtonRule
                            && (OnPress?.IsEmpty ?? true) && (OnRelease?.IsEmpty ?? true);
 }
 
+/// <summary>When a button action fires.</summary>
+public enum ButtonTrigger
+{
+    Pressed = 0,
+    Released = 1,
+    /// <summary>Button held for a while (Star Citizen "hold" mode). Only available as a direct binding.</summary>
+    LongPress = 2,
+    /// <summary>Button pressed twice (Star Citizen "double_tap"). Only available as a direct binding.</summary>
+    DoublePress = 3,
+    /// <summary>Keys stay down for as long as the button is held (own keys only).</summary>
+    Held = 4,
+}
+
+/// <summary>
+/// One thing the app does for a physical input: send the keyboard key of a Star Citizen action
+/// (<see cref="Map"/>/<see cref="Action"/>) or an own key combo (<see cref="Keys"/>).
+/// </summary>
+public sealed class ButtonAction
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>Physical input without device prefix: "button5", "hat1_up".</summary>
+    public string Input { get; set; } = "";
+    public ButtonTrigger Trigger { get; set; }
+    public string? Map { get; set; }
+    public string? Action { get; set; }
+    /// <summary>Own key combo like "lshift+d"; used when no game action is set.</summary>
+    public string? Keys { get; set; }
+}
+
 /// <summary>Binding of a Star Citizen action to a physical input, independent of js numbers.</summary>
 public sealed class ScBind
 {
@@ -32,6 +61,12 @@ public sealed class ScBind
     public string? Mode { get; set; }
 
     public string ActionKey => $"{Map}/{Action}";
+
+    /// <summary>
+    /// A trailing space is Star Citizen's "unbound" marker ("js1_ ", "kb1_ "): the game's default for that
+    /// device is removed for this action.
+    /// </summary>
+    public bool IsUnbound => Input.EndsWith(' ');
 }
 
 public enum ProfileKind
@@ -54,6 +89,11 @@ public sealed class ControllerProfile
     public string Name { get; set; } = "New profile";
     public Dictionary<string, ButtonRule> Rules { get; set; } = new();
     public List<ScBind> Binds { get; set; } = new();
+    /// <summary>
+    /// What physical inputs do besides their direct Star Citizen binding: send the key of a game action or an
+    /// own key on press, release or while held.
+    /// </summary>
+    public List<ButtonAction> Actions { get; set; } = new();
 }
 
 /// <summary>
@@ -69,6 +109,23 @@ public sealed class Setup
     public ControllerProfile Gamepad { get; set; } = new() { Kind = ProfileKind.Gamepad, Name = "Gamepad" };
     /// <summary>Stick record id → stick layout id (a <see cref="ControllerProfile"/> of kind Stick).</summary>
     public Dictionary<Guid, Guid> StickLayouts { get; set; } = new();
+    /// <summary>The content as last saved by the user (JSON). Differs from the live content = unsaved changes.</summary>
+    public string? SavedState { get; set; }
+    /// <summary>
+    /// The profile that mirrors Star Citizen itself ("Default"). Read SC refreshes it; it can be edited and
+    /// saved as another profile, but never deleted or renamed.
+    /// </summary>
+    public bool IsGameProfile { get; set; }
+    /// <summary>A profile that ships with the app ("Empty"): editable, but never deleted or renamed.</summary>
+    public bool IsBuiltIn { get; set; }
+    /// <summary>
+    /// Starts from nothing: the game's own default bindings are not shown and, on deploy, are unbound in
+    /// Star Citizen. Only what the user binds in this profile is active.
+    /// </summary>
+    public bool NoDefaults { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsProtected => IsGameProfile || IsBuiltIn;
 }
 
 /// <summary>A stick the user has named. Matched to connected hardware by the Matcher.</summary>
@@ -112,6 +169,17 @@ public sealed class AppSettings
 {
     public string? ScRoot { get; set; }
     public string Channel { get; set; } = "LIVE";
-    public bool OutputEnabled { get; set; } = true;
-    public bool MinimizeToTray { get; set; } = true;
+    public CloseAction OnClose { get; set; } = CloseAction.Ask;
+}
+
+/// <summary>What the window's X button does.</summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
+public enum CloseAction
+{
+    /// <summary>Ask the first time (and every time until the user ticks "don't ask again").</summary>
+    Ask,
+    /// <summary>Hide the window; the app keeps running in the tray.</summary>
+    Tray,
+    /// <summary>Quit the app.</summary>
+    Exit,
 }
