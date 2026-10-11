@@ -56,7 +56,7 @@ public class ActionTests
     }
 
     [Fact]
-    public void Released_game_action_without_key_gets_a_free_key_and_fires_on_release_only()
+    public void Released_game_action_has_no_key_until_the_user_picks_one_and_fires_on_release_only()
     {
         var hub = new FakeHub();
         var d = Dev();
@@ -68,6 +68,15 @@ public class ActionTests
         var prof = c.Store.Profile(c.Store.Data.Sticks[0].ProfileId)!;
 
         c.AddAction(prof, "button4", new ActionSpec(ButtonTrigger.Released, "spaceship_movement", "v_retract_landing_system", null));
+
+        // Adding an action writes nothing into the keyboard layer on its own.
+        Assert.Equal(KeySource.None, c.KeyFor("spaceship_movement", "v_retract_landing_system").Source);
+        Assert.Empty(c.KeyboardMouseProfile.Binds);
+
+        // The user asks for a suggestion and takes it.
+        var suggested = c.SuggestKey();
+        Assert.Equal("lctrl+f1", suggested);
+        Assert.True(c.SetActionKey("spaceship_movement", "v_retract_landing_system", suggested!));
 
         var key = c.KeyFor("spaceship_movement", "v_retract_landing_system");
         Assert.Equal(KeySource.Own, key.Source);
@@ -116,5 +125,93 @@ public class ActionTests
         c.MigrateRules();
         Assert.Empty(prof.Rules);
         Assert.Equal(new[] { ButtonTrigger.Held, ButtonTrigger.Released }, prof.Actions.Select(a => a.Trigger).ToArray());
+    }
+
+    // ---- conflicts of the loaded profile ------------------------------------------------------
+
+    private static (AppController C, ControllerProfile Prof) Controller()
+    {
+        var hub = new FakeHub();
+        hub.List.Add(Dev());
+        var c = new AppController(TmpStore(), hub, new FakeOutput());
+        c.Reconcile();
+        return (c, c.Store.Profile(c.Store.Data.Sticks[0].ProfileId)!);
+    }
+
+    [Fact]
+    public void Adding_an_action_checks_nothing_and_removes_nothing()
+    {
+        var (c, prof) = Controller();
+        using var _ = c;
+        c.SetBind(prof, "m", "fire", "button4");
+        c.AddAction(prof, "button4", new ActionSpec(ButtonTrigger.Held, null, null, "lshift"));
+        Assert.Single(prof.Binds);                       // the Star Citizen binding is still there
+        Assert.Single(prof.Actions);
+    }
+
+    [Fact]
+    public void Replaced_button_with_a_binding_is_reported_and_stays_until_the_user_decides()
+    {
+        var (c, prof) = Controller();
+        using var _ = c;
+        c.SetBind(prof, "m", "fire", "button4");
+        c.AddAction(prof, "button4", new ActionSpec(ButtonTrigger.Held, null, null, "lshift"));
+
+        var conflict = Assert.Single(c.FindConflicts());
+        Assert.Equal(ConflictKind.DirectBinding, conflict.Kind);
+        Assert.Equal("button4", conflict.Input);
+        Assert.Equal("fire", conflict.Action);
+
+        c.IgnoreConflict(conflict);
+        Assert.Empty(c.FindConflicts());
+        Assert.Single(c.FindConflicts(includeIgnored: true));
+        Assert.Single(prof.Binds);                       // ignoring changes nothing in the profile
+    }
+
+    [Fact]
+    public void Removing_the_conflicting_binding_is_an_explicit_call()
+    {
+        var (c, prof) = Controller();
+        using var _ = c;
+        c.SetBind(prof, "m", "fire", "button4");
+        c.AddAction(prof, "button4", new ActionSpec(ButtonTrigger.Held, null, null, "lshift"));
+        Assert.True(c.RemoveConflictingBinding(c.FindConflicts().Single()));
+        Assert.DoesNotContain(prof.Binds, b => !b.IsUnbound && b.Action == "fire");
+        Assert.Empty(c.FindConflicts());
+    }
+
+    [Fact]
+    public void Direct_press_with_app_release_on_one_button_is_not_a_conflict()
+    {
+        var (c, prof) = Controller();
+        using var _ = c;
+        c.SetBind(prof, "m", "fire", "button4");
+        c.AddAction(prof, "button4", new ActionSpec(ButtonTrigger.Released, null, null, "f9"));
+        Assert.Empty(c.FindConflicts());
+    }
+
+    [Fact]
+    public void Game_action_without_a_key_is_reported_until_a_key_is_set()
+    {
+        var (c, prof) = Controller();
+        using var _ = c;
+        c.AddAction(prof, "button4", new ActionSpec(ButtonTrigger.Released, "m", "gear", null));
+        var conflict = Assert.Single(c.FindConflicts());
+        Assert.Equal(ConflictKind.MissingKey, conflict.Kind);
+
+        c.SetActionKey("m", "gear", c.SuggestKey()!);
+        Assert.Empty(c.FindConflicts());
+    }
+
+    [Fact]
+    public void Suggested_keys_walk_through_the_free_combos()
+    {
+        var used = new HashSet<string>();
+        var first = KeyPlanner.NextFreeKey(used);
+        var second = KeyPlanner.NextFreeKey(used, first);
+        Assert.Equal("lctrl+f1", first);
+        Assert.Equal("lctrl+f2", second);
+        used.Add(KeyPlanner.Canonical("lctrl+f2"));
+        Assert.Equal("lctrl+f3", KeyPlanner.NextFreeKey(used, first));
     }
 }

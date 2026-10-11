@@ -89,7 +89,8 @@ public sealed partial class AppController
             Action = spec.IsGameAction ? spec.Action : null,
             Keys = spec.IsGameAction ? null : spec.Keys,
         });
-        if (spec.IsGameAction) EnsureKey(spec.Map!, spec.Action!);
+        // No key is chosen here: the user picks or records it in the action's row (see SuggestKey), so
+        // nothing is written into the profile's keyboard layer behind their back.
         Touch();
     }
 
@@ -150,22 +151,17 @@ public sealed partial class AppController
         KeyPlanner.Resolve(KeyboardMouseProfile, Catalog, map, action);
 
     /// <summary>
-    /// Makes sure the action has a key the app can send: its own binding, the game default, or - if neither
-    /// exists - a free combo that is written into the keyboard layer (and deployed like any other binding).
+    /// A key combo nobody uses (game defaults, this profile's keyboard layer, the game's file), or null. Called
+    /// again with the last suggestion it walks on to the next free one. Only suggests: the caller decides.
     /// </summary>
-    public ResolvedKey EnsureKey(string map, string action)
+    public string? SuggestKey(string? after = null)
     {
-        var r = KeyFor(map, action);
-        if (r.Combo != null) return r;
-        string? combo;
         lock (_gate)
         {
             var raw = new List<string>();
             try { raw = LoadActionMaps()?.Rebinds().Select(x => x.Input).ToList() ?? raw; } catch { /* unreadable file */ }
-            combo = KeyPlanner.FreeKey(KeyPlanner.UsedKeys(KeyboardMouseProfile, Catalog, raw));
+            return KeyPlanner.NextFreeKey(KeyPlanner.UsedKeys(KeyboardMouseProfile, Catalog, raw), after);
         }
-        if (combo == null || !SetActionKey(map, action, combo)) return r;
-        return new ResolvedKey(combo, KeySource.Own);
     }
 
     /// <summary>Sets the keyboard key of a game action (replaces any key of our keyboard layer).</summary>
@@ -200,7 +196,9 @@ public sealed partial class AppController
         bool changed = false;
         lock (_gate)
         {
-            foreach (var p in Store.Data.Profiles.Where(p => !p.IsSystem && p.Rules.Count > 0))
+            foreach (var p in Store.Data.Profiles.Where(p => !p.IsSystem
+                         && p.Rules.Values.Any(r => !(r.OnPress?.IsEmpty ?? true) || !(r.OnRelease?.IsEmpty ?? true)
+                                                    || (string.IsNullOrWhiteSpace(r.Label)))))
             {
                 foreach (var (input, rule) in p.Rules)
                 {
@@ -213,7 +211,13 @@ public sealed partial class AppController
                     if (rule.OnRelease is { IsEmpty: false } rel)
                         p.Actions.Add(new ButtonAction { Input = input, Keys = rel.Keys, Trigger = ButtonTrigger.Released });
                 }
-                p.Rules.Clear();
+                // Rules that carry a button name stay (name only); everything else was moved to actions.
+                foreach (var input in p.Rules.Keys.ToList())
+                {
+                    var rule = p.Rules[input];
+                    if (string.IsNullOrWhiteSpace(rule.Label)) p.Rules.Remove(input);
+                    else { rule.OnPress = null; rule.OnRelease = null; }
+                }
                 changed = true;
             }
         }

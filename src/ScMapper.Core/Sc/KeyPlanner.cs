@@ -89,6 +89,22 @@ public static class KeyPlanner
     public static string? FreeKey(ISet<string> used) =>
         Candidates().FirstOrDefault(c => !used.Contains(Canonical(c)));
 
+    /// <summary>
+    /// The next free candidate after <paramref name="after"/> (wrapping around), so repeated asks walk through
+    /// the free combos. Without <paramref name="after"/> it is the first free one.
+    /// </summary>
+    public static string? NextFreeKey(ISet<string> used, string? after = null)
+    {
+        var all = Candidates().ToList();
+        int start = after == null ? -1 : all.FindIndex(c => Canonical(c) == Canonical(after));
+        for (int i = 1; i <= all.Count; i++)
+        {
+            var c = all[(start + i + all.Count) % all.Count];
+            if (!used.Contains(Canonical(c))) return c;
+        }
+        return null;
+    }
+
     /// <summary>The combo as written into the game's profile (kb1_...).</summary>
     public static string? ToRaw(string combo) =>
         KeyCombo.TryParse(combo, out _, out _) ? ScInputCodes.BuildKbm(combo, null) : null;

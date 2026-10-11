@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using ScMapper.Core;
 using ScMapper.Core.Model;
@@ -63,10 +64,17 @@ public partial class ButtonInspector : UserControl
         Empty.Visibility = Visibility.Collapsed;
         Body.Visibility = Visibility.Visible;
         var prof = _c.Store.Profile(_stick.ProfileId);
-        Title.Text = $"{_stick.Name} · {InputNames.Pretty(_input)}";
-        Subtitle.Text = prof == null ? "No controller profile assigned" : $"Profile: {prof.Name}" +
-            (_stick.ScInstance is { } n ? $"   ·   Star Citizen: js{n}_{_input}" : "");
+        var label = prof == null ? null : _c.ButtonLabel(prof, _input);
+        var where = $"{_stick.Name} · {InputNames.Pretty(_input)}";
+        Title.Text = label ?? where;
+        if (LabelBox.Text != (label ?? "")) LabelBox.Text = label ?? "";
+        LabelHint.Visibility = LabelBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        SaveLabelBtn.Content = "Save";
+        Subtitle.Text = (label != null ? where + "   ·   " : "") +
+            (prof == null ? "No stick layout assigned" : $"Layout: {prof.Name}" +
+            (_stick.ScInstance is { } n ? $"   ·   Star Citizen: js{n}_{_input}" : ""));
 
+        BuildConflicts();
         Rows.Children.Clear();
         var modifier = prof != null ? _c.KeyModifierOf(prof, _input) : null;
         if (modifier != null) Rows.Children.Add(BuildModifierRow(prof!, modifier));
@@ -74,6 +82,45 @@ public partial class ButtonInspector : UserControl
         foreach (var r in rows) Rows.Children.Add(BuildRow(prof!, r));
         NoActions.Visibility = rows.Count == 0 && modifier == null ? Visibility.Visible : Visibility.Collapsed;
         _loading = false;
+    }
+
+    // ---- collisions with this profile ---------------------------------------------------------------
+
+    /// <summary>
+    /// Bindings of the loaded profile that still sit on this (replaced) button. Shown, never fixed by itself:
+    /// the user either ignores them or removes the binding.
+    /// </summary>
+    private void BuildConflicts()
+    {
+        ConflictBox.Children.Clear();
+        if (_c == null || _stick == null || _input == null) return;
+        foreach (var conflict in _c.ConflictsOf(_stick, _input).Where(x => x.Kind == ConflictKind.DirectBinding))
+        {
+            var c = _c;
+            var cf = conflict;
+            var name = c.Catalog?.Find(cf.Map, cf.Action)?.Label ?? cf.Action;
+            var text = new TextBlock
+            {
+                Text = $"Still bound in Star Citizen: {name}{(cf.IsGameDefault ? " (game default)" : "")}. " +
+                       $"This button is replaced by {cf.Replacement}, but that binding keeps firing.",
+                Foreground = B("WarnBrush"), TextWrapping = TextWrapping.Wrap,
+            };
+            var ignore = new Button { Content = "Ignore", Style = (Style)FindResource("Flat"), MinHeight = 30, Margin = new Thickness(0, 6, 8, 0) };
+            ignore.Click += (_, _) => { c.IgnoreConflict(cf); Refresh(); };
+            var remove = new Button { Content = "Remove binding", Style = (Style)FindResource("Flat"), MinHeight = 30, Margin = new Thickness(0, 6, 0, 0) };
+            remove.Click += (_, _) => { c.RemoveConflictingBinding(cf); Refresh(); };
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+            buttons.Children.Add(ignore);
+            buttons.Children.Add(remove);
+            var box = new StackPanel();
+            box.Children.Add(text);
+            box.Children.Add(buttons);
+            ConflictBox.Children.Add(new Border
+            {
+                Background = B("WarnDimBrush"), BorderBrush = B("WarnBrush"), BorderThickness = new Thickness(3, 0, 0, 0),
+                Padding = new Thickness(12, 10, 10, 8), Margin = new Thickness(0, 0, 0, 8), Child = box,
+            });
+        }
     }
 
     // ---- this button acts as a keyboard modifier -----------------------------------------------------
@@ -138,7 +185,7 @@ public partial class ButtonInspector : UserControl
         box.Children.Add(detailHost);
         return new Border
         {
-            Background = B("BgBrush"), CornerRadius = new CornerRadius(6),
+            Background = B("BgBrush"),
             Padding = new Thickness(10, 8, 8, 8), Margin = new Thickness(0, 0, 0, 8), Child = box,
         };
     }
@@ -270,6 +317,30 @@ public partial class ButtonInspector : UserControl
         }
 
         var key = c.KeyFor(spec.Map!, spec.Action!);
+        var profileName = c.ActiveSetup.Name;
+
+        // Sets a free combo on the user's click - never on its own.
+        Button Suggest(string content, string? after)
+        {
+            var b = new Button { Content = content, Style = (Style)FindResource("Flat"), MinHeight = 30, Margin = new Thickness(8, 0, 0, 0),
+                ToolTip = "Choose a key combination no game action uses" };
+            b.Click += (_, _) =>
+            {
+                var combo = c.SuggestKey(after);
+                if (combo == null) return;
+                c.SetActionKey(spec.Map!, spec.Action!, combo);
+                Refresh();
+            };
+            return b;
+        }
+
+        TextBlock Note(string text, Brush? brush = null) => new()
+        {
+            Text = text, Foreground = brush ?? B("MutedBrush"), FontSize = 11.5, TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 6),
+        };
+
+        var st = new StackPanel();
         if (key.Source == KeySource.Own)
         {
             var box = new KeyCaptureBox { MinHeight = 34, MinWidth = 220, HorizontalAlignment = HorizontalAlignment.Left };
@@ -279,21 +350,40 @@ public partial class ButtonInspector : UserControl
                 c.SetActionKey(spec.Map!, spec.Action!, combo);
                 Refresh();
             };
-            var st = new StackPanel();
-            st.Children.Add(Field("Key", box));
+            var line = new StackPanel { Orientation = Orientation.Horizontal };
+            line.Children.Add(box);
+            line.Children.Add(Suggest("Suggest another", key.Combo));
+            st.Children.Add(Field("Key", line));
             var clash = c.KeyConflicts(spec.Map!, spec.Action!, key.Combo!);
             if (clash.Count > 0)
-                st.Children.Add(new TextBlock
-                {
-                    Text = "Also used by: " + string.Join(", ", clash.Take(4)) + (clash.Count > 4 ? ", …" : ""),
-                    Foreground = B("WarnBrush"), FontSize = 11.5, TextWrapping = TextWrapping.Wrap,
-                });
+                st.Children.Add(Note("Also used by: " + string.Join(", ", clash.Take(4)) + (clash.Count > 4 ? ", …" : ""), B("WarnBrush")));
+            st.Children.Add(Note($"Saved in profile “{profileName}”: {ScInputCodes.Pretty("kb1_" + key.Combo)} → {spec.Action}"));
             return st;
         }
         if (key.Source == KeySource.Default)
-            return Field("Key", new TextBlock { Text = ScInputCodes.Pretty("kb1_" + key.Combo), FontWeight = FontWeights.SemiBold,
+        {
+            var line = new StackPanel { Orientation = Orientation.Horizontal };
+            line.Children.Add(new TextBlock { Text = ScInputCodes.Pretty("kb1_" + key.Combo), FontWeight = FontWeights.SemiBold,
                 VerticalAlignment = VerticalAlignment.Center });
-        return Field("Key", new TextBlock { Text = "none available yet", Foreground = B("WarnBrush"), VerticalAlignment = VerticalAlignment.Center });
+            line.Children.Add(Suggest("Use another key", null));
+            st.Children.Add(Field("Key", line));
+            st.Children.Add(Note("The game's own key for this action - nothing is changed in your profile."));
+            return st;
+        }
+
+        var none = new KeyCaptureBox { MinHeight = 34, MinWidth = 220, HorizontalAlignment = HorizontalAlignment.Left };
+        none.ComboChanged += combo =>
+        {
+            c.SetActionKey(spec.Map!, spec.Action!, combo);
+            Refresh();
+        };
+        var noneLine = new StackPanel { Orientation = Orientation.Horizontal };
+        noneLine.Children.Add(none);
+        noneLine.Children.Add(Suggest("Suggest free key", null));
+        st.Children.Add(Field("Key", noneLine));
+        st.Children.Add(Note("No key yet - nothing is sent until you choose one. Click the field and press the key, " +
+                             "or let Star Button suggest a free one.", B("WarnBrush")));
+        return st;
     }
 
     // ---- edits ----------------------------------------------------------------------------------
@@ -321,6 +411,33 @@ public partial class ButtonInspector : UserControl
         if (pick.Modifier != null) _c.SetKeyModifierButton(prof, _input, pick.Modifier);
         else _c.AddAction(prof, _input, new ActionSpec(ButtonTrigger.Pressed, pick.Map, pick.Action, pick.Keys));
         Refresh();
+    }
+
+    // ---- button name ----------------------------------------------------------------------------
+
+    private void LabelBox_TextChanged(object s, TextChangedEventArgs e)
+    {
+        LabelHint.Visibility = LabelBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (!_loading) SaveLabelBtn.Content = "Save";
+    }
+
+    private void LabelBox_KeyDown(object s, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        SaveLabel();
+        e.Handled = true;
+    }
+
+    private void SaveLabel_Click(object s, RoutedEventArgs e) => SaveLabel();
+
+    private void SaveLabel()
+    {
+        if (_c == null || _stick == null || _input == null) return;
+        var prof = _c.EnsureProfile(_stick);
+        _c.SetButtonLabel(prof, _input, LabelBox.Text);
+        Refresh();
+        SaveLabelBtn.Content = "✓ Saved";
+        Keyboard.ClearFocus();
     }
 
     private void ClearAll_Click(object s, RoutedEventArgs e)

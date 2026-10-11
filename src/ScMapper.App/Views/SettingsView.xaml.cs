@@ -51,6 +51,9 @@ public partial class SettingsView : UserControl
 
         _loading = true;
         CloseCombo.SelectedIndex = (int)_c.Store.Data.Settings.OnClose;
+        ThemeCombo.ItemsSource = ThemeManager.Themes;
+        ThemeCombo.SelectedItem = ThemeManager.Find(_c.Store.Data.Settings.Theme);
+        ThemeHint.Text = ThemeManager.Current.Hint;
         _loading = false;
         RebuildBackups();
     }
@@ -98,6 +101,16 @@ public partial class SettingsView : UserControl
         if (_loading || _c == null || CloseCombo.SelectedIndex < 0) return;
         _c.Store.Data.Settings.OnClose = (CloseAction)CloseCombo.SelectedIndex;
         _c.Store.Save();
+    }
+
+    private void ThemeCombo_SelectionChanged(object s, SelectionChangedEventArgs e)
+    {
+        if (_loading || _c == null || ThemeCombo.SelectedItem is not ThemeManager.ThemeInfo t) return;
+        _c.Store.Data.Settings.Theme = t.Key;
+        _c.Store.Save();
+        ThemeManager.Apply(t.Key);
+        _c.Touch();
+        ThemeHint.Text = t.Hint;
     }
 
     private void Autostart_Click(object s, RoutedEventArgs e)

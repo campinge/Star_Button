@@ -95,6 +95,18 @@ public sealed partial class AppController : IDisposable
             d.Setups.Add(new Setup { Name = names.Contains("Empty") ? "Empty (built-in)" : "Empty", IsBuiltIn = true, NoDefaults = true });
             Store.Save();
         }
+        // "Empty" holds nothing by definition; repair copies that picked up bindings (e.g. from a game import).
+        foreach (var e in d.Setups.Where(x => x.IsBuiltIn && x.NoDefaults))
+        {
+            if (e.Keyboard.Binds.Count == 0 && e.Gamepad.Binds.Count == 0 && e.StickLayouts.Count == 0
+                && e.Keyboard.Rules.Count == 0 && e.Gamepad.Rules.Count == 0
+                && e.Keyboard.Actions.Count == 0 && e.Gamepad.Actions.Count == 0) continue;
+            e.Keyboard.Binds.Clear(); e.Keyboard.Rules.Clear(); e.Keyboard.Actions.Clear();
+            e.Gamepad.Binds.Clear(); e.Gamepad.Rules.Clear(); e.Gamepad.Actions.Clear();
+            e.StickLayouts.Clear();
+            e.SavedState = null;
+            Store.Save();
+        }
         var a = d.Setups.FirstOrDefault(x => x.Id == d.ActiveSetupId) ?? d.Setups[0];
         d.ActiveSetupId = a.Id;
         return a;
@@ -471,6 +483,45 @@ public sealed partial class AppController : IDisposable
         catch { return null; }
     }
 
+    /// <summary>
+    /// What a deploy would change, per action: the rebinds of Star Citizen's file that go away and the ones that
+    /// come in. Unchanged rebinds are left out. Null = no install or the file cannot be compared.
+    /// </summary>
+    public IReadOnlyList<DeployChange>? PendingDetails()
+    {
+        var inst = Install;
+        if (inst == null) return null;
+        try
+        {
+            var d = Store.Data;
+            var plan = Deployer.Apply(inst.ActionMapsPath, Store.BackupDir, DeploySticks(), ProfilesForDeploy(),
+                d.ManagedKeys, dryRun: true, new ManagedKeys(d.ManagedKeys, d.ManagedKbmKeys, d.ManagedGamepadKeys),
+                UnboundDefaults());
+            static Dictionary<string, RebindState> States(ActionMapsFile f) => f.Rebinds()
+                .Select(r => (Key: $"{r.Map}/{r.Action}", State: new RebindState(r.Input,
+                    r.MultiTap == "2" ? "double_tap" : r.ActivationMode)))
+                .Distinct()
+                .ToDictionary(x => $"{x.Key}|{x.State.Input}|{x.State.Mode}", x => x.State);
+            var cur = States(ActionMapsFile.LoadOrEmpty(inst.ActionMapsPath));
+            var next = States(plan.Result!);
+            var byAction = new Dictionary<string, (List<RebindState> Removed, List<RebindState> Added)>();
+            void Put(string full, RebindState s, bool added)
+            {
+                var key = full[..full.IndexOf('|')];
+                if (!byAction.TryGetValue(key, out var e)) byAction[key] = e = (new(), new());
+                (added ? e.Added : e.Removed).Add(s);
+            }
+            foreach (var (k, s) in cur) if (!next.ContainsKey(k)) Put(k, s, false);
+            foreach (var (k, s) in next) if (!cur.ContainsKey(k)) Put(k, s, true);
+            return byAction.Select(kv =>
+            {
+                int i = kv.Key.IndexOf('/');
+                return new DeployChange(kv.Key[..i], kv.Key[(i + 1)..], kv.Value.Removed, kv.Value.Added);
+            }).ToList();
+        }
+        catch { return null; }
+    }
+
     public void Start()
     {
         _ = ActiveSetup;
@@ -481,7 +532,8 @@ public sealed partial class AppController : IDisposable
         // First start: show what the game already has instead of an empty profile.
         try
         {
-            if (Install != null && File.Exists(Install.ActionMapsPath) && ActiveSetupIsEmpty())
+            // Only the game profile mirrors the game's file; "Empty" and user profiles stay as they are.
+            if (Install != null && File.Exists(Install.ActionMapsPath) && ActiveSetup.IsGameProfile && ActiveSetupIsEmpty())
             {
                 ReadIntoActiveSetup();
                 SaveActiveSetup();
@@ -561,6 +613,18 @@ public sealed partial class AppController : IDisposable
             var data = Store.Data;
             var m = DeviceMatcher.Match(data.Sticks, devices);
 
+            // A stick keeps its device name; older versions overwrote it with the profile name.
+            foreach (var s in data.Sticks)
+            {
+                var model = s.ProductName.Trim();
+                if (model.Length == 0 || s.Name == model || s.Name.StartsWith(model + " ", StringComparison.Ordinal)) continue;
+                var taken = data.Sticks.Where(o => o != s).Select(o => o.Name).ToHashSet(StringComparer.Ordinal);
+                var restored = model;
+                for (int i = 2; taken.Contains(restored); i++) restored = $"{model} {i}";
+                s.Name = restored;
+                Store.Save();
+            }
+
             // New device of a model nobody is waiting for -> register it with sensible defaults.
             foreach (var d in m.Unmatched.ToList())
             {
@@ -568,8 +632,13 @@ public sealed partial class AppController : IDisposable
                 if (someoneWaiting) continue;
                 var baseName = d.ProductName.Trim();
                 int n = data.Sticks.Count(s => s.ProductName.Trim() == baseName) + 1;
-                var profile = new ControllerProfile { Name = UniqueProfileName(n == 1 ? baseName : $"{baseName} {n}") };
-                data.Profiles.Add(profile);
+                // Reuse a leftover profile of this stick model (e.g. after a reinstall) before making a new one.
+                var profile = FreeProfileFor(baseName);
+                if (profile == null)
+                {
+                    profile = new ControllerProfile { Name = UniqueProfileName(baseName) };
+                    data.Profiles.Add(profile);
+                }
                 var rec = new StickRecord
                 {
                     Name = n == 1 ? baseName : $"{baseName} {n}",
@@ -593,6 +662,27 @@ public sealed partial class AppController : IDisposable
             Store.Save();
         }
         Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// A stick profile of this stick model that nobody uses: not on any stick and not in any setup.
+    /// Profiles are named after the model ("Generic USB Joystick", "Generic USB Joystick 2", ...), so four
+    /// identical sticks reuse four existing profiles and only a fifth stick gets a new one.
+    /// </summary>
+    public ControllerProfile? FreeProfileFor(string productName, IEnumerable<Guid>? alsoTaken = null)
+    {
+        lock (_gate)
+        {
+            var data = Store.Data;
+            var taken = data.Sticks.Where(s => s.ProfileId != null).Select(s => s.ProfileId!.Value)
+                .Concat(data.Setups.SelectMany(s => s.StickLayouts.Values))
+                .Concat(alsoTaken ?? Enumerable.Empty<Guid>())
+                .ToHashSet();
+            var rx = new System.Text.RegularExpressions.Regex(
+                "^" + System.Text.RegularExpressions.Regex.Escape(productName.Trim()) + @"( \d+)*$",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return data.Profiles.FirstOrDefault(p => !p.IsSystem && !taken.Contains(p.Id) && rx.IsMatch(p.Name));
+        }
     }
 
     private string UniqueProfileName(string name)
@@ -636,7 +726,7 @@ public sealed partial class AppController : IDisposable
                 var rec = sticks.FirstOrDefault(s => s.ProfileId == profileId);
                 if (rec == null)
                 {
-                    rec = new StickRecord { Name = profile.Name, ProfileId = profileId };
+                    rec = new StickRecord { Name = dev.ProductName.Trim(), ProfileId = profileId };
                     sticks.Add(rec);
                 }
                 foreach (var other in sticks.Where(s => s.Id != rec.Id && (s.InstanceGuid == dev.InstanceGuid ||
@@ -658,8 +748,13 @@ public sealed partial class AppController : IDisposable
         lock (_gate)
         {
             var nm = name ?? device.ProductName.Trim();
-            var profile = new ControllerProfile { Name = UniqueProfileName(nm) };
-            Store.Data.Profiles.Add(profile);
+            var model = device.ProductName.Trim();
+            var profile = FreeProfileFor(model);
+            if (profile == null)
+            {
+                profile = new ControllerProfile { Name = UniqueProfileName(model) };
+                Store.Data.Profiles.Add(profile);
+            }
             rec = new StickRecord { Name = nm, ProfileId = profile.Id };
             DeviceMatcher.Refresh(rec, device);
             Store.Data.Sticks.Add(rec);
@@ -826,9 +921,61 @@ public sealed partial class AppController : IDisposable
 
     public void DeleteProfile(ControllerProfile p)
     {
-        if (p.IsSystem) return;
-        Store.Data.Profiles.Remove(p);
-        foreach (var s in Store.Data.Sticks.Where(s => s.ProfileId == p.Id)) s.ProfileId = null;
+        DeleteProfiles(new[] { p });
+    }
+
+    /// <summary>
+    /// Deletes stick layouts everywhere: sticks and setups that used one are left without (a new, empty
+    /// layout is made on demand). Their saved snapshots are dropped so nothing resurrects them.
+    /// </summary>
+    public void DeleteProfiles(IEnumerable<ControllerProfile> profiles)
+    {
+        lock (_gate)
+        {
+            _ = ActiveSetup;
+            var ids = profiles.Where(p => !p.IsSystem).Select(p => p.Id).ToHashSet();
+            if (ids.Count == 0) return;
+            Store.Data.Profiles.RemoveAll(p => ids.Contains(p.Id));
+            foreach (var s in Store.Data.Sticks.Where(s => s.ProfileId is { } g && ids.Contains(g))) s.ProfileId = null;
+            foreach (var setup in Store.Data.Setups)
+            {
+                foreach (var k in setup.StickLayouts.Where(kv => ids.Contains(kv.Value)).Select(kv => kv.Key).ToList())
+                    setup.StickLayouts.Remove(k);
+                setup.SavedState = null;
+            }
+        }
+        Touch();
+    }
+
+    /// <summary>Where a stick layout is in use: "Stick (Setup)" for every setup that assigns it.</summary>
+    public IReadOnlyList<string> ProfileUsage(ControllerProfile p)
+    {
+        lock (_gate)
+        {
+            _ = ActiveSetup;
+            SyncActiveFromSticks();
+            var res = new List<string>();
+            foreach (var setup in Store.Data.Setups)
+                foreach (var kv in setup.StickLayouts.Where(kv => kv.Value == p.Id))
+                {
+                    var st = Store.Data.Sticks.FirstOrDefault(s => s.Id == kv.Key);
+                    res.Add($"{st?.Name ?? "unknown stick"} ({setup.Name})");
+                }
+            return res;
+        }
+    }
+
+    public void RenameProfile(ControllerProfile p, string name)
+    {
+        name = name.Trim();
+        if (name.Length == 0 || p.IsSystem || name == p.Name) return;
+        lock (_gate)
+        {
+            var taken = Store.Data.Profiles.Where(o => o != p).Select(o => o.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var n = name;
+            for (int i = 2; taken.Contains(n); i++) n = $"{name} {i}";
+            p.Name = n;
+        }
         Touch();
     }
 
@@ -836,7 +983,9 @@ public sealed partial class AppController : IDisposable
     {
         var p = Store.Profile(s.ProfileId);
         if (p != null) return p;
-        p = NewProfile(s.Name);
+        var model = s.ProductName.Trim();
+        p = model.Length > 0 ? FreeProfileFor(model) : null;
+        p ??= NewProfile(model.Length > 0 ? model : s.Name);
         s.ProfileId = p.Id;
         Touch();
         return p;
@@ -874,6 +1023,18 @@ public sealed partial class AppController : IDisposable
         if (rule == null || rule.IsEmpty) p.Rules.Remove(input);
         else p.Rules[input] = rule;
         Touch();
+    }
+
+    /// <summary>The user's own name for a physical input ("Landing gear"); null/empty removes it.</summary>
+    public string? ButtonLabel(ControllerProfile p, string input) =>
+        p.Rules.TryGetValue(input, out var r) && !string.IsNullOrWhiteSpace(r.Label) ? r.Label : null;
+
+    public void SetButtonLabel(ControllerProfile p, string input, string? label)
+    {
+        label = string.IsNullOrWhiteSpace(label) ? null : label.Trim();
+        var rule = p.Rules.TryGetValue(input, out var r) ? r : new ButtonRule();
+        rule.Label = label;
+        SetRule(p, input, rule);
     }
 
     // ---- SC file integration ----------------------------------------------------------------

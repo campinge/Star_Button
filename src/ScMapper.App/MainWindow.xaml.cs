@@ -12,6 +12,9 @@ public partial class MainWindow : Window
     private readonly AppController _c;
     private readonly DispatcherTimer _status = new() { Interval = TimeSpan.FromSeconds(1) };
 
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
     public bool ReallyClose { get; set; }
 
     public MainWindow(AppController c)
@@ -20,10 +23,16 @@ public partial class MainWindow : Window
         Icon = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(App.MakeIcon().Handle, Int32Rect.Empty,
             System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
         _c = c;
+        // Dark title bar to match the theme (Windows 10 build 18985+ / Windows 11).
+        SourceInitialized += (_, _) =>
+        {
+            int on = 1;
+            DwmSetWindowAttribute(new System.Windows.Interop.WindowInteropHelper(this).Handle, 20, ref on, sizeof(int));
+        };
         SticksPage.Attach(c);
         BindingsPage.Attach(c);
         SettingsPage.Attach(c);
-        BindingsPage.DeployDueChanged += due => NavBindings.Content = NavLabel("Bindings", due);
+        BindingsPage.DeployDueChanged += due => NavBindings.Content = NavLabel("02  BINDINGS", due);
         c.Changed += () => Dispatcher.BeginInvoke(UpdateStatus);
         c.RuleFired += f => Dispatcher.BeginInvoke(() => StatusLast.Text = $"{f.StickName} {Controls.InputNames.Pretty(f.Input)}: {f.Description}");
         _status.Tick += (_, _) => UpdateStatus();

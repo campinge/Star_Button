@@ -190,7 +190,8 @@ public partial class BindingsView : UserControl
                 if (_bindAction != null) { BindJoystick(e, stick); return; }
                 if (stick == null) return;
                 var key = (stick.Id, e.Input);
-                _lit[key] = e.Pressed ? DateTime.MaxValue : DateTime.UtcNow.AddMilliseconds(450);
+                // Lit exactly as long as the input is held.
+                if (e.Pressed) _lit[key] = DateTime.MaxValue; else _lit.Remove(key);
                 ApplyLighting();
             });
         };
@@ -457,9 +458,19 @@ public partial class BindingsView : UserControl
     /// </summary>
     private void ApplyLighting()
     {
-        var now = DateTime.UtcNow;
-        foreach (var k in _lit.Where(kv => kv.Value < now).Select(kv => kv.Key).ToList()) _lit.Remove(k);
         bool active = IsVisible && Window.GetWindow(this)?.IsActive == true;
+
+        // Buttons are also read from the live device state, so a combo's button lights even when its
+        // press edge was missed (e.g. another button of the same device was already held).
+        var down = new HashSet<(Guid, string)>(_lit.Keys);
+        if (active && _c != null)
+            foreach (var s in _c.Store.Data.Sticks)
+            {
+                var st = _c.DeviceFor(s) is { } d ? _c.Hub.GetState(d.InstanceGuid) : null;
+                if (st == null) continue;
+                for (int i = 0; i < st.Buttons.Length; i++)
+                    if (st.Buttons[i]) down.Add((s.Id, $"button{i + 1}"));
+            }
 
         var litActions = new HashSet<string>();
         foreach (var (key, tags) in _actionTags)
@@ -468,7 +479,7 @@ public partial class BindingsView : UserControl
             foreach (var t in tags)
             {
                 t.Lit = active && t.StickId is { } id && t.Input != null
-                        && _lit.ContainsKey((id, ScInputCodes.SplitJsInput(t.Input).Input));
+                        && down.Contains((id, ScInputCodes.SplitJsInput(t.Input).Input.ToLowerInvariant()));
                 any |= t.Lit;
             }
             if (any) litActions.Add(key);
@@ -630,6 +641,15 @@ public partial class BindingsView : UserControl
         }
         _c.ActivateSetup(su);
         _statusDirty = true;
+        CheckConflicts();
+    }
+
+    /// <summary>After a profile was loaded: show what is off in it (nothing is changed without a click).</summary>
+    private void CheckConflicts()
+    {
+        var c = _c;
+        if (c == null) return;
+        Dispatcher.BeginInvoke(() => Controls.ConflictDialog.ShowIfAny(OwnerWindow, c));
     }
 
     /// <summary>Unsaved changes: save them, throw them away, or stay. False = stay.</summary>
@@ -762,6 +782,7 @@ public partial class BindingsView : UserControl
         try
         {
             _c.ActivateSetup(_c.ImportSetup(File.ReadAllText(dlg.FileName)));
+            CheckConflicts();
         }
         catch (Exception ex)
         {
@@ -798,6 +819,7 @@ public partial class BindingsView : UserControl
         Flash(imported == 0
             ? $"Star Citizen has no custom bindings - “{setup.Name}” now shows the game defaults"
             : $"Read {imported} binding(s) from Star Citizen into “{setup.Name}”{extra}");
+        CheckConflicts();
     }
 
     private void Deploy_Click(object s, RoutedEventArgs e)
@@ -817,12 +839,15 @@ public partial class BindingsView : UserControl
         try
         {
             var plan = _c.Deploy(true);
-            var msg = $"Write profile “{_c.ActiveSetup.Name}” to Star Citizen?\n\n" +
-                      $"{plan.Added} binding(s) will be written, {plan.Removed} replaced.\n" +
-                      "A backup of actionmaps.xml is made first.";
-            if (plan.Warnings.Count > 0)
-                msg += "\n\nWarnings:\n• " + string.Join("\n• ", plan.Warnings.Take(6));
-            if (MessageBox.Show(msg, "Deploy", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
+            var changes = _c.PendingDetails() ?? new List<DeployChange>();
+            // Open conflicts are shown as warnings; they never block the deploy.
+            var warnings = plan.Warnings.Concat(_c.FindConflicts().Select(x =>
+                x.Kind == ConflictKind.DirectBinding
+                    ? $"{x.Stick.Name} · {Controls.InputNames.Pretty(x.Input)} is replaced by {x.Replacement} but still bound to " +
+                      $"{_c.Catalog?.Find(x.Map, x.Action)?.Label ?? x.Action}"
+                    : $"{x.Replacement} on {x.Stick.Name} · {Controls.InputNames.Pretty(x.Input)} has no key"))
+                .ToList();
+            if (!Controls.DeployPreviewDialog.Confirm(OwnerWindow, _c, changes, warnings)) return;
             var res = _c.Deploy(false);
             Flash($"Deployed {res.Added} bindings ✓" + (res.BackupPath != null ? $" · backup {Path.GetFileName(res.BackupPath)}" : ""));
         }

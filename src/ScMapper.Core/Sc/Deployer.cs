@@ -11,6 +11,19 @@ public sealed record DeployResult(int Added, int Removed, string? BackupPath, IR
     public IReadOnlyList<string> GamepadKeys { get; init; } = Array.Empty<string>();
 }
 
+/// <summary>One rebind as it sits in actionmaps.xml. Mode: press, hold, double_tap ... null = the game decides.</summary>
+public sealed record RebindState(string Input, string? Mode)
+{
+    /// <summary>A trailing space is Star Citizen's "unbound" marker: the default is switched off.</summary>
+    public bool IsCleared => Input.EndsWith(' ');
+}
+
+/// <summary>What a deploy changes for one action: rebinds that go away and rebinds that come in.</summary>
+public sealed record DeployChange(string Map, string Action, IReadOnlyList<RebindState> Removed, IReadOnlyList<RebindState> Added)
+{
+    public string Key => $"{Map}/{Action}";
+}
+
 /// <summary>Action keys ("map/action") written by earlier deploys, per device class.</summary>
 public sealed record ManagedKeys(IEnumerable<string> Joystick, IEnumerable<string> Kbm, IEnumerable<string> Gamepad)
 {

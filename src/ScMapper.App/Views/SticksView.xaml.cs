@@ -77,10 +77,7 @@ public partial class SticksView : UserControl
         {
             bool on = _c.IsConnected(s);
             var model = string.IsNullOrWhiteSpace(s.ProductName) ? "Unknown model" : s.ProductName.Trim();
-            var profName = _c.Store.Profile(s.ProfileId)?.Name;
-            var profPart = profName == null ? "no profile" : profName == s.Name ? "" : $"profile {profName}";
             var sub = on ? (model == s.Name ? "" : model) : "Not connected";
-            if (profPart.Length > 0) sub += (sub.Length > 0 ? " · " : "") + profPart;
             if (sub.Length == 0) sub = $"{s.Buttons} buttons · {s.Axes} axes";
             rows.Add(new StickRow(s.Id, s.Name, sub,
                 s.ScInstance is { } n ? $"js{n}" : "", on ? B("GoodBrush") : B("WarnBrush"), false));
@@ -131,11 +128,16 @@ public partial class SticksView : UserControl
         if (stick != null)
         {
             var d = _c.DeviceFor(stick);
-            if (NameBox.Text != stick.Name) NameBox.Text = stick.Name;
+            var profile = _c.Store.Profile(stick.ProfileId);
+            var profileName = profile?.Name ?? "";
+            if (NameBox.Text != profileName) NameBox.Text = profileName;
+            NameBox.IsEnabled = profile == null || !profile.IsSystem;
+            SaveNameBtn.Content = "Save";
             StatusDot.Fill = d != null ? B("GoodBrush") : B("WarnBrush");
             StatusText.Text = d != null ? "Connected" : "Not connected";
-            ModelText.Text = $"{(string.IsNullOrWhiteSpace(stick.ProductName) ? "Unknown model" : stick.ProductName.Trim())} · " +
+            ModelText.Text = $"Stick: {stick.Name} · " +
                              $"{stick.Buttons} buttons · {stick.Axes} axes · {stick.Hats} hats · {stick.Vid:X4}:{stick.Pid:X4}";
+            ProfileText.Text = profile != null ? "Profile name above - pick another profile in Profile assigner" : "No profile yet - type a name above to create one";
             var choices = new List<InstanceChoice>
             {
                 new(null, d != null ? $"Auto (js{d.DefaultScInstance})" : "Auto"),
@@ -164,6 +166,9 @@ public partial class SticksView : UserControl
             ButtonsGrid.Selected = n;
     }
 
+    private long _conflictAt;
+    private List<(Guid Stick, string Input)> _conflictRows = new();
+
     private void Tick()
     {
         if (_c == null || SelectedStick is not { } s) return;
@@ -173,12 +178,30 @@ public partial class SticksView : UserControl
         if (st == null) return;
         var prof = _c.Store.Profile(s.ProfileId);
         var marked = new HashSet<int>();
+        var replaced = new HashSet<int>();
+        var conflicts = new HashSet<int>();
+        static bool Number(string k, out int n)
+        {
+            n = 0;
+            return k.StartsWith("button") && int.TryParse(k[6..], out n);
+        }
         if (prof != null)
         {
             foreach (var k in prof.Rules.Keys.Concat(prof.Actions.Select(a => a.Input)).Concat(prof.Binds.Select(b => ScMapper.Core.Sc.ScInputCodes.SplitJsInput(b.Input).Input)))
-                if (k.StartsWith("button") && int.TryParse(k[6..], out var n)) marked.Add(n);
+                if (Number(k, out var n)) marked.Add(n);
+            foreach (var k in prof.Actions.Select(a => a.Input))
+                if (Number(k, out var n)) replaced.Add(n);
+            // Looking through the game's catalog is not free and Tick runs often: refresh twice a second.
+            if (Environment.TickCount64 - _conflictAt > 500)
+            {
+                _conflictAt = Environment.TickCount64;
+                _conflictRows = _c.FindConflicts().Where(x => x.Kind == ScMapper.Core.ConflictKind.DirectBinding)
+                    .Select(x => (x.Stick.Id, x.Input)).ToList();
+            }
+            foreach (var (stickId, input) in _conflictRows)
+                if (stickId == s.Id && Number(input, out var n)) conflicts.Add(n);
         }
-        ButtonsGrid.SetLive((bool[])st.Buttons.Clone(), marked);
+        ButtonsGrid.SetLive((bool[])st.Buttons.Clone(), marked, replaced, conflicts);
         Axes.Update(d, st);
     }
 
@@ -214,23 +237,52 @@ public partial class SticksView : UserControl
 
     private void NameBox_TextChanged(object s, TextChangedEventArgs e)
     {
-        if (_loading || SelectedStick is not { } st || _c == null) return;
-        st.Name = NameBox.Text;
-        _c.Store.Save();
-        // Update only the list row text to keep focus in the text box.
-        if (StickPicker.ItemsSource is List<StickRow> rows)
-        {
-            int i = rows.FindIndex(r => Equals(r.Key, st.Id));
-            if (i >= 0)
-            {
-                rows[i] = rows[i] with { Name = st.Name };
-                _loading = true;
-                StickPicker.ItemsSource = null;
-                StickPicker.ItemsSource = rows;
-                StickPicker.SelectedItem = rows[i];
-                _loading = false;
-            }
-        }
+        if (_loading) return;
+        SaveNameBtn.Content = "Save";
+    }
+
+    private void NameBox_KeyDown(object s, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        SaveName();
+        e.Handled = true;
+    }
+
+    private void SaveName_Click(object s, RoutedEventArgs e) => SaveName();
+
+    // Clicking anywhere outside a text box releases its focus, so the field can be left with the mouse.
+    private void View_PreviewMouseDown(object s, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is DependencyObject d && Keyboard.FocusedElement is TextBox tb && !IsInside(d, tb))
+            Keyboard.ClearFocus();
+    }
+
+    private static bool IsInside(DependencyObject d, DependencyObject ancestor)
+    {
+        for (; d != null; d = d is System.Windows.Media.Visual or System.Windows.Media.Media3D.Visual3D
+                 ? System.Windows.Media.VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d))
+            if (d == ancestor) return true;
+        return false;
+    }
+
+    private void SaveName()
+    {
+        if (SelectedStick is not { } st || _c == null) return;
+        // The box names the stick's profile; the stick itself keeps its device name.
+        var profile = _c.EnsureProfile(st);
+        var name = NameBox.Text.Trim();
+        if (name.Length == 0) { NameBox.Text = profile.Name; return; }
+        _c.RenameProfile(profile, name);
+        NameBox.Text = profile.Name;
+        SaveNameBtn.Content = "✓ Saved";
+        Keyboard.ClearFocus();
+    }
+
+    private void ProfileAssigner_Click(object s, RoutedEventArgs e)
+    {
+        if (_c == null) return;
+        Controls.ProfileAssignerDialog.Show(Window.GetWindow(this), _c);
+        Controls.ConflictDialog.ShowIfAny(Window.GetWindow(this), _c);
     }
 
     private void ProfileManager_Click(object s, RoutedEventArgs e)
@@ -268,28 +320,6 @@ public partial class SticksView : UserControl
         bool open = EventsBody.Visibility != Visibility.Visible;
         EventsBody.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
         EventsToggle.Content = (open ? "▾ " : "▸ ") + "Recent events";
-    }
-
-    private void Forget_Click(object s, RoutedEventArgs e)
-    {
-        if (SelectedStick is not { } st || _c == null) return;
-        if (MessageBox.Show($"Forget '{st.Name}'? Its controller profile is kept.", "Forget stick",
-                MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
-        _c.ForgetStick(st);
-    }
-
-    private void Identify_Click(object s, RoutedEventArgs e)
-    {
-        if (SelectedStick is not { } st || _c == null) return;
-        CaptureHint.Text = $"Press any button on the physical stick that should be “{st.Name}”…";
-        CaptureHint.Visibility = Visibility.Visible;
-        _c.BeginCapture(r => Dispatcher.BeginInvoke(() =>
-        {
-            CaptureHint.Visibility = Visibility.Collapsed;
-            _c.AssignDevice(st, r.Device);
-            _selectedKey = st.Id;
-            Rebuild();
-        }));
     }
 
     private void RemapAssign_Click(object s, RoutedEventArgs e)

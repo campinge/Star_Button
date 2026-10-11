@@ -123,6 +123,11 @@ public sealed class Setup
     /// Star Citizen. Only what the user binds in this profile is active.
     /// </summary>
     public bool NoDefaults { get; set; }
+    /// <summary>
+    /// Conflicts of this profile the user chose to ignore (see AppController.FindConflicts). Not part of the
+    /// saved content: ignoring something never makes the profile "modified".
+    /// </summary>
+    public List<string> IgnoredConflicts { get; set; } = new();
 
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsProtected => IsGameProfile || IsBuiltIn;
@@ -170,6 +175,8 @@ public sealed class AppSettings
     public string? ScRoot { get; set; }
     public string Channel { get; set; } = "LIVE";
     public CloseAction OnClose { get; set; } = CloseAction.Ask;
+    /// <summary>Visual theme key, see ThemeManager in the app ("cyan" or "amber").</summary>
+    public string Theme { get; set; } = "cyan";
 }
 
 /// <summary>What the window's X button does.</summary>

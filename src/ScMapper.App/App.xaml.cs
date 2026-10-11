@@ -34,6 +34,7 @@ public partial class App : Application
         var args = e.Args.ToList();
         int di = args.IndexOf("--data");
         var store = new AppStore(di >= 0 && di + 1 < args.Count ? args[di + 1] : null);
+        ThemeManager.Apply(store.Data.Settings.Theme);
         _controller = new AppController(store, new DirectInputHub(), new SendInputKeyboard());
         _controller.Start();
 

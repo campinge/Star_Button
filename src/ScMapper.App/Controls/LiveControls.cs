@@ -72,11 +72,19 @@ public sealed class ButtonGridControl : FrameworkElement
         set { if (_selected != value) { _selected = value; InvalidateVisual(); } }
     }
 
-    public void SetLive(bool[] lit, HashSet<int> marked)
+    private HashSet<int> _replaced = new();
+    private HashSet<int> _conflicts = new();
+
+    /// <param name="replaced">Buttons an action of Star Button stands in for (hollow square).</param>
+    /// <param name="conflicts">Replaced buttons that still carry a Star Citizen binding (warning dot).</param>
+    public void SetLive(bool[] lit, HashSet<int> marked, HashSet<int>? replaced = null, HashSet<int>? conflicts = null)
     {
-        bool same = lit.Length == _lit.Length && lit.AsSpan().SequenceEqual(_lit) && marked.SetEquals(_marked);
+        replaced ??= new HashSet<int>();
+        conflicts ??= new HashSet<int>();
+        bool same = lit.Length == _lit.Length && lit.AsSpan().SequenceEqual(_lit) && marked.SetEquals(_marked)
+                    && replaced.SetEquals(_replaced) && conflicts.SetEquals(_conflicts);
         if (same) return;
-        _lit = lit; _marked = marked;
+        _lit = lit; _marked = marked; _replaced = replaced; _conflicts = conflicts;
         InvalidateVisual();
     }
 
@@ -119,27 +127,33 @@ public sealed class ButtonGridControl : FrameworkElement
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, ActualWidth, ActualHeight));
         int cols = Columns(ActualWidth);
         var accent = Brushes2.Get("AccentBrush");
-        var panel = Brushes2.Get("Panel2Brush");
-        var border = Brushes2.Get("BorderBrush");
-        var warn = Brushes2.Get("WarnBrush");
+        var panel = Brushes2.Get("PanelBrush");
+        var border = Brushes2.Get("Border2Brush");
+        var deep = Brushes2.Get("AccentDeepBrush");
+        var onAccent = Brushes2.Get("OnAccentBrush");
         var text = Brushes2.Get("TextBrush");
         var muted = Brushes2.Get("MutedBrush");
+        double cut = Application.Current.TryFindResource("ControlCut") is double c ? c : 6;
         var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        var tf = new Typeface("Segoe UI");
+        var tf = new Typeface("Consolas");
         for (int i = 0; i < _count; i++)
         {
             int n = i + 1;
-            var rect = new Rect((i % cols) * (Cell + Gap), (i / cols) * (CellH + Gap), Cell, CellH);
+            var rect = new Rect((i % cols) * (Cell + Gap) + 0.5, (i / cols) * (CellH + Gap) + 0.5, Cell - 1, CellH - 1);
             bool lit = i < _lit.Length && _lit[i];
             bool sel = n == _selected;
-            var fill = lit ? accent : (n == _hover ? Brushes2.Get("HoverBrush") : panel);
-            var pen = new Pen(sel ? Brushes.White : (lit ? accent : border), sel ? 2 : 1);
-            dc.DrawRoundedRectangle(fill, pen, rect, 6, 6);
-            var ft = new FormattedText(n.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight, tf, 15, lit ? Brushes.Black : (_marked.Contains(n) ? text : muted), dpi);
-            dc.DrawText(ft, new Point(rect.X + (Cell - ft.Width) / 2, rect.Y + (CellH - ft.Height) / 2));
+            var fill = lit ? accent : sel ? deep : (n == _hover ? Brushes2.Get("HoverBrush") : panel);
+            var pen = new Pen(sel || lit || n == _hover ? accent : border, sel ? 2 : 1);
+            dc.DrawGeometry(fill, pen, ChamferGeometry.Create(rect, cut));
+            var ft = new FormattedText(n.ToString("00", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight, tf, 15, lit ? onAccent : (_marked.Contains(n) || sel ? text : muted), dpi);
+            dc.DrawText(ft, new Point(rect.X + (rect.Width - ft.Width) / 2, rect.Y + (rect.Height - ft.Height) / 2));
             if (_marked.Contains(n))
-                dc.DrawEllipse(lit ? Brushes.Black : warn, null, new Point(rect.Right - 7, rect.Y + 7), 3, 3);
+                dc.DrawRectangle(lit ? onAccent : accent, null, new Rect(rect.Right - 9, rect.Y + 5, 4, 4));
+            if (_replaced.Contains(n))
+                dc.DrawRectangle(null, new Pen(lit ? onAccent : accent, 1), new Rect(rect.Right - 17.5, rect.Y + 5.5, 4, 4));
+            if (_conflicts.Contains(n))
+                dc.DrawRectangle(Brushes2.Get("WarnBrush"), null, new Rect(rect.Right - 25, rect.Y + 5, 4, 4));
         }
     }
 }
@@ -163,11 +177,13 @@ public sealed class AxesControl : FrameworkElement
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, ActualWidth, ActualHeight));
         if (_info == null || _state == null) return;
         var accent = Brushes2.Get("AccentBrush");
-        var border = Brushes2.Get("BorderBrush");
-        var panel = Brushes2.Get("Panel2Brush");
+        var border = Brushes2.Get("Border2Brush");
+        var grid = Brushes2.Get("BorderBrush");
+        var panel = Brushes2.Get("PanelBrush");
         var muted = Brushes2.Get("MutedBrush");
         var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        var tf = new Typeface("Segoe UI");
+        var tf = new Typeface("Consolas");
+        double cut = Application.Current.TryFindResource("ControlCut") is double cc ? cc : 6;
         var slots = _info.AxisSlots;
         double Val(int slot) { int i = ((List<int>)slots.ToList()).IndexOf(slot); return i >= 0 && i < _state.Axes.Length ? _state.Axes[i] : 0; }
         bool Has(int slot) => slots.Contains(slot);
@@ -178,12 +194,21 @@ public sealed class AxesControl : FrameworkElement
         {
             const double S = 100;
             var r = new Rect(x, 0, S, S);
-            dc.DrawRoundedRectangle(panel, new Pen(border, 1), r, 8, 8);
-            var cp = new Pen(border, 1);
+            dc.DrawGeometry(panel, new Pen(border, 1), ChamferGeometry.Create(new Rect(r.X + 0.5, r.Y + 0.5, S - 1, S - 1), cut));
+            var cp = new Pen(grid, 1);
+            var mid = new Point(r.X + S / 2, r.Y + S / 2);
+            dc.DrawEllipse(null, cp, mid, S / 4, S / 4);
+            dc.DrawEllipse(null, cp, mid, S / 2 - 8, S / 2 - 8);
             dc.DrawLine(cp, new Point(r.X + S / 2, r.Y + 6), new Point(r.X + S / 2, r.Bottom - 6));
             dc.DrawLine(cp, new Point(r.X + 6, r.Y + S / 2), new Point(r.Right - 6, r.Y + S / 2));
             double px = r.X + S / 2 + Val(sx) * (S / 2 - 8), py = r.Y + S / 2 + Val(sy) * (S / 2 - 8);
-            dc.DrawEllipse(accent, null, new Point(px, py), 6, 6);
+            var ap = new Pen(accent, 1.5);
+            dc.DrawEllipse(null, ap, new Point(px, py), 6, 6);
+            dc.DrawEllipse(accent, null, new Point(px, py), 2, 2);
+            dc.DrawLine(ap, new Point(px - 11, py), new Point(px - 7, py));
+            dc.DrawLine(ap, new Point(px + 7, py), new Point(px + 11, py));
+            dc.DrawLine(ap, new Point(px, py - 11), new Point(px, py - 7));
+            dc.DrawLine(ap, new Point(px, py + 7), new Point(px, py + 11));
             var ft = new FormattedText(title, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, tf, 11, muted, dpi);
             dc.DrawText(ft, new Point(r.X + (S - ft.Width) / 2, r.Bottom + 4));
             x += S + 14;
@@ -197,10 +222,11 @@ public sealed class AxesControl : FrameworkElement
         {
             const double W = 22, H = 100;
             var r = new Rect(x, 0, W, H);
-            dc.DrawRoundedRectangle(panel, new Pen(border, 1), r, 5, 5);
+            dc.DrawRectangle(panel, new Pen(border, 1), new Rect(r.X + 0.5, r.Y + 0.5, W - 1, H - 1));
             double v = (Val(slot) + 1) / 2;          // 0..1 bottom to top
             double fh = Math.Max(2, v * (H - 4));
-            dc.DrawRoundedRectangle(accent, null, new Rect(r.X + 2, r.Bottom - 2 - fh, W - 4, fh), 3, 3);
+            dc.DrawRectangle(accent, null, new Rect(r.X + 3, r.Bottom - 2 - fh, W - 6, fh));
+            for (int t = 1; t < 4; t++) dc.DrawLine(new Pen(grid, 1), new Point(r.X + 1, r.Y + t * H / 4), new Point(r.X + 6, r.Y + t * H / 4));
             var ft = new FormattedText(InputNames.AxisNames[slot].Replace("Slider ", "S"), CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight, tf, 11, muted, dpi);
             dc.DrawText(ft, new Point(r.X + (W - ft.Width) / 2, r.Bottom + 4));

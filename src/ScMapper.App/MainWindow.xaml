@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:v="clr-namespace:ScMapper.App.Views"
         Title="Star Button" Width="1320" Height="860" MinWidth="1100" MinHeight="680"
-        Background="{StaticResource BgBrush}" WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource BgBrush}" WindowStartupLocation="CenterScreen"
         FontFamily="{StaticResource UiFont}">
     <Grid>
         <Grid.RowDefinitions>
@@ -12,22 +12,28 @@
         </Grid.RowDefinitions>
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="210" />
+                <ColumnDefinition Width="220" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
-                <DockPanel Margin="16">
-                    <StackPanel DockPanel.Dock="Top" Margin="6,6,0,28">
-                        <TextBlock FontSize="19" FontWeight="Bold">
-                            <Run Text="★" Foreground="{StaticResource AccentBrush}" /><Run Text=" Star Button" />
-                        </TextBlock>
-                        <TextBlock Style="{StaticResource Muted}" FontSize="11" Text="Stick mapper for Star Citizen" Margin="2,2,0,0" />
+            <!-- navigation rail -->
+            <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="20,20,16,26">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="M8,0 L10,5.5 L16,5.5 L11,9 L13,15 L8,11.4 L3,15 L5,9 L0,5.5 L6,5.5 Z"
+                                  Fill="{DynamicResource AccentBrush}" Margin="0,2,10,0" VerticalAlignment="Center" />
+                            <TextBlock FontSize="19" FontWeight="Bold" Text="STAR BUTTON" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource Muted}" FontSize="11" Text="STICK MAPPER // STAR CITIZEN" Margin="0,4,0,0" />
+                        <Rectangle Height="1" Margin="0,16,0,0" Fill="{DynamicResource BorderBrush}" />
                     </StackPanel>
+                    <TextBlock DockPanel.Dock="Bottom" Style="{StaticResource Muted}" FontFamily="{StaticResource MonoFont}"
+                               FontSize="11" Margin="20,0,0,16" VerticalAlignment="Bottom" Text="STAR BUTTON // LIVE" />
                     <StackPanel>
-                        <RadioButton x:Name="NavSticks" Style="{StaticResource Nav}" Content="Sticks" IsChecked="True" Checked="Nav_Checked" />
-                        <RadioButton x:Name="NavBindings" Style="{StaticResource Nav}" Content="Bindings" Checked="Nav_Checked" />
-                        <RadioButton x:Name="NavSettings" Style="{StaticResource Nav}" Content="Settings" Checked="Nav_Checked" />
+                        <RadioButton x:Name="NavSticks" Style="{StaticResource Nav}" Content="01  STICKS" IsChecked="True" Checked="Nav_Checked" />
+                        <RadioButton x:Name="NavBindings" Style="{StaticResource Nav}" Content="02  BINDINGS" Checked="Nav_Checked" />
+                        <RadioButton x:Name="NavSettings" Style="{StaticResource Nav}" Content="03  SETTINGS" Checked="Nav_Checked" />
                     </StackPanel>
                 </DockPanel>
             </Border>
@@ -39,17 +45,16 @@
             </Grid>
         </Grid>
 
-        <Border Grid.Row="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="0,1,0,0" Padding="16,8">
-            <DockPanel>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock x:Name="StatusSticks" Style="{StaticResource Muted}" />
-                    <TextBlock Text="  ·  " Style="{StaticResource Muted}" />
-                    <TextBlock x:Name="StatusGame" Style="{StaticResource Muted}" />
-                    <TextBlock Text="  ·  " Style="{StaticResource Muted}" />
-                    <TextBlock x:Name="StatusLast" Style="{StaticResource Muted}" />
-                </StackPanel>
-            </DockPanel>
+        <Border Grid.Row="1" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,1,0,0" Padding="20,7">
+            <StackPanel Orientation="Horizontal" TextElement.FontFamily="{StaticResource MonoFont}" TextElement.FontSize="12">
+                <Ellipse Width="7" Height="7" Fill="{DynamicResource GoodBrush}" Margin="0,0,8,0" />
+                <TextBlock x:Name="StatusSticks" Style="{StaticResource Muted}" FontFamily="{StaticResource MonoFont}" />
+                <TextBlock Text="  //  " Foreground="{DynamicResource Border2Brush}" FontFamily="{StaticResource MonoFont}" />
+                <TextBlock x:Name="StatusGame" Style="{StaticResource Muted}" FontFamily="{StaticResource MonoFont}" />
+                <TextBlock Text="  //  " Foreground="{DynamicResource Border2Brush}" FontFamily="{StaticResource MonoFont}" />
+                <TextBlock x:Name="StatusLast" Style="{StaticResource Muted}" FontFamily="{StaticResource MonoFont}" />
+            </StackPanel>
         </Border>
     </Grid>
 </Window>
