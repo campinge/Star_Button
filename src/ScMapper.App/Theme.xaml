@@ -19,6 +19,8 @@
     <SolidColorBrush x:Key="MutedBrush" Color="#6F8A9C" />
     <SolidColorBrush x:Key="GoodBrush" Color="#4FE0A0" />
     <SolidColorBrush x:Key="WarnBrush" Color="#FFB648" />
+    <!-- A pressed button that Star Button redirects to an action: lights up in this colour instead of the accent. -->
+    <SolidColorBrush x:Key="RedirectBrush" Color="#FF3EC8" />
     <SolidColorBrush x:Key="BadBrush" Color="#FF5D5D" />
     <SolidColorBrush x:Key="WarnDimBrush" Color="#2A2210" />
     <SolidColorBrush x:Key="HoverBrush" Color="#12212E" />
@@ -154,6 +156,36 @@
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentDeepBrush}" />
                             <Setter TargetName="bar" Property="Visibility" Value="Visible" />
+                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Horizontal tab header (RadioButton) -->
+    <Style x:Key="TabHeader" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="b" Background="Transparent" BorderThickness="0,0,0,2" BorderBrush="Transparent">
+                        <ContentPresenter Margin="14,10" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="{DynamicResource HoverBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentDeepBrush}" />
+                            <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
                             <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
                         </Trigger>
                     </ControlTemplate.Triggers>

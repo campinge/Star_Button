@@ -213,12 +213,10 @@ public class CoreTests
 </ActionProfiles></ActionMaps>
 """);
         var hub = new FakeHub();
+        hub.List.Add(new DeviceInfo(Guid.NewGuid(), "Left", "Left", 1, 1, "path1", 12, 2, 1, 1));   // js2
         using var c = new AppController(new AppStore(Tmp("store")), hub, new FakeOutput());
-        var s = new StickRecord { Name = "Left", ScInstance = 2 };
-        var prof = new ControllerProfile { Name = "P" };
-        s.ProfileId = prof.Id;
-        c.Store.Data.Sticks.Add(s);
-        c.Store.Data.Profiles.Add(prof);
+        c.Reconcile(); c.RegisterNewDevices();
+        var prof = c.Store.Profile(c.Store.Data.Sticks.Single().ProfileId)!;
 
         var (imported, skipped) = c.ImportFromActionMaps(ActionMapsFile.Load(path));
         Assert.Equal(3, imported);   // button7, axis y and the double-tap hat
@@ -299,10 +297,13 @@ public class CoreTests
         store.Data.Sticks.Add(new StickRecord { Name = "Alpha", InstanceGuid = d.InstanceGuid, ProfileId = layout.Id, Vid = 1, Pid = 1 });
 
         using var c = new AppController(store, hub, new FakeOutput());
-        c.Reconcile();
-        // The old data becomes "Default"; the built-in "Empty" profile ships next to it.
-        Assert.Equal(new[] { "Default", "Empty" }, c.Setups.Select(s => s.Name).ToArray());
-        Assert.Equal("Default", c.ActiveSetup.Name);
+        c.Reconcile(); c.RegisterNewDevices();
+        // "Default" is the game's defaults and holds nothing: the old data moves into a profile of its own and
+        // stays the active one. The built-in "Empty" and "Keyboard & Mouse" profiles ship next to them.
+        Assert.Equal(new[] { "Default", "My bindings", "Empty", "Keyboard & Mouse" }, c.Setups.Select(s => s.Name).ToArray());
+        Assert.Equal("My bindings", c.ActiveSetup.Name);
+        Assert.Empty(c.Setups.First(s => s.IsGameProfile).Keyboard.Binds);
+        Assert.True(c.Setups.First(s => s.Name == "Keyboard & Mouse").NoStickDefaults);
         Assert.Equal("kb1_f4", c.KeyboardMouseProfile.Binds.Single().Input);
         Assert.DoesNotContain(store.Data.Profiles, p => p.IsSystem);
         Assert.Equal(layout.Id, c.ActiveSetup.StickLayouts[store.Data.Sticks[0].Id]);
@@ -315,19 +316,23 @@ public class CoreTests
         copyLayout.Binds.Clear();
         c.KeyboardMouseProfile.Binds.Clear();
         c.Touch();
-        c.ActivateSetup(c.Setups.First(s => s.Name == "Default"));
+        c.ActivateSetup(c.Setups.First(s => s.Name == "My bindings"));
         Assert.Single(c.Store.Profile(store.Data.Sticks[0].ProfileId)!.Binds);
         Assert.Single(c.KeyboardMouseProfile.Binds);
 
-        // New setups start empty; the sticks have no layout until something is bound.
+        // New setups start empty, but a stick keeps its profile (same name, empty bindings): sticks and profiles
+        // are the app's own, binding profiles only hold what is bound.
         var fresh = c.NewSetup("Mining");
-        Assert.Null(store.Data.Sticks[0].ProfileId);
+        var freshLayout = c.Store.Profile(store.Data.Sticks[0].ProfileId)!;
+        Assert.NotEqual(layout.Id, freshLayout.Id);
+        Assert.Equal(layout.Name, freshLayout.Name);
+        Assert.Empty(freshLayout.Binds);
         Assert.Empty(c.KeyboardMouseProfile.Binds);
 
         Assert.True(c.DeleteSetup(fresh));
-        Assert.Equal(3, c.Setups.Count);                                  // Default, its copy, Empty
+        Assert.Equal(5, c.Setups.Count);                                  // Default, My bindings, its copy, Empty, Keyboard & Mouse
         Assert.NotNull(c.ActiveSetup);
-        Assert.False(c.DeleteSetup(c.Setups.First(s => s.IsGameProfile)));   // Default and Empty are protected
+        Assert.False(c.DeleteSetup(c.Setups.First(s => s.IsGameProfile)));   // Default and the built-ins are protected
         Assert.False(c.DeleteSetup(c.Setups.First(s => s.IsBuiltIn)));
     }
 
@@ -346,7 +351,7 @@ public class CoreTests
         var d = new DeviceInfo(Guid.NewGuid(), "Alpha", "Alpha", 1, 1, null, 12, 2, 0, 0);
         hub.List.Add(d);
         using var c = new AppController(new AppStore(Tmp("store")), hub, new FakeOutput());
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         var stick = c.Store.Data.Sticks[0];
         c.SetRule(c.Store.Profile(stick.ProfileId)!, "button9", new ButtonRule { OnPress = new KeyAction { Keys = "u" } });
         var firstSetup = c.ActiveSetup;
@@ -371,7 +376,7 @@ public class CoreTests
         var hub = new FakeHub();
         hub.List.Add(new DeviceInfo(Guid.NewGuid(), "Alpha", "Alpha", 1, 1, null, 12, 2, 0, 0));
         using var c = new AppController(new AppStore(Tmp("store")), hub, new FakeOutput());
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         var layout = c.Store.Profile(c.Store.Data.Sticks[0].ProfileId)!;
         c.SetBind(layout, "m", "a", "button4");
         c.SetRawBind(c.KeyboardMouseProfile, "m", "a", "kb1_k");

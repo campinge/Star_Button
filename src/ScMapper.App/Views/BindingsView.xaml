@@ -42,6 +42,10 @@
                     <Setter TargetName="badge" Property="Background" Value="#3E3115" />
                     <Setter TargetName="kind" Property="Foreground" Value="#F0B64A" />
                 </DataTrigger>
+                <DataTrigger Binding="{Binding IsInactive}" Value="True">
+                    <Setter TargetName="tag" Property="Opacity" Value="0.45" />
+                    <Setter TargetName="tag" Property="ToolTip" Value="This stick is not plugged in: the binding is kept but not deployed" />
+                </DataTrigger>
                 <DataTrigger Binding="{Binding IsDefault}" Value="True">
                     <Setter TargetName="tag" Property="Opacity" Value="0.6" />
                     <Setter TargetName="tag" Property="Background" Value="Transparent" />
@@ -64,13 +68,9 @@
             </DataTemplate.Triggers>
         </DataTemplate>
 
-        <!-- One choice in the trigger-mode list of the side panel -->
+        <!-- One choice in the trigger-mode dropdown of the side panel (title only; the description is shown below it) -->
         <DataTemplate x:Key="ModeTemplate">
-            <StackPanel Margin="10,7">
-                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13" />
-                <TextBlock Text="{Binding Description}" Style="{StaticResource Muted}" FontSize="11.5"
-                           TextWrapping="Wrap" Margin="0,2,0,0" />
-            </StackPanel>
+            <TextBlock Text="{Binding Title}" FontSize="13" Margin="2,3" />
         </DataTemplate>
     </UserControl.Resources>
 
@@ -113,6 +113,9 @@
                                 <MenuItem Header="Export to file…" Click="SetupExport_Click" />
                                 <MenuItem Header="Import from file…" Click="SetupImport_Click" />
                                 <Separator />
+                                <MenuItem Header="Joystick numbers (js1, js2, …)…" Click="JsNumbers_Click"
+                                          ToolTip="Which number Star Citizen uses for each stick; swap two numbers" />
+                                <Separator />
                                 <MenuItem x:Name="MenuDelete" Header="Delete" Click="SetupDelete_Click" />
                             </ContextMenu>
                         </Button.ContextMenu>
@@ -145,6 +148,21 @@
                 </Grid>
 
                 <TextBlock x:Name="SyncStatus" Margin="2,8,0,0" Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" />
+
+                <!-- a stick's bindings sit under another js number in the game's file than the stick has now -->
+                <Border x:Name="JsDriftBox" Visibility="Collapsed" Margin="0,8,0,0" Padding="12,8"
+                        Background="{DynamicResource WarnDimBrush}" BorderBrush="{DynamicResource WarnBrush}" BorderThickness="1">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="JsDriftText" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12"
+                                   Foreground="{DynamicResource WarnBrush}" />
+                        <Button Grid.Column="1" Content="Joystick numbers…" Padding="12,4" Margin="12,0,0,0"
+                                Click="JsNumbers_Click" />
+                    </Grid>
+                </Border>
             </StackPanel>
         </Border>
 
@@ -156,9 +174,33 @@
                        Text="Double-click an action to bind a key or stick button (hold two keys for a combination, Esc cancels). Click a chip to change how it triggers." />
             <ListBox x:Name="Tree" SelectionChanged="Tree_SelectionChanged" MouseDoubleClick="Tree_DoubleClick"
                      VirtualizingPanel.IsVirtualizing="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.ItemContainerStyle>
+                    <!-- No gap between rows, so the guide lines run unbroken. -->
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                        <Setter Property="Margin" Value="0" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <Border x:Name="row" Margin="{Binding Pad}" Padding="12,9" BorderThickness="3,0,0,0"
+                        <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <!-- Guide lines (Reddit style): one per ancestor; click = collapse that ancestor. -->
+                        <StackPanel Orientation="Horizontal" Margin="4,0,0,0">
+                            <Border x:Name="g0" Width="18" Background="Transparent" Cursor="Hand" Tag="0"
+                                    Visibility="{Binding Guide0Visibility}" ToolTip="{Binding Guide0Tip}"
+                                    MouseLeftButtonDown="Guide_MouseDown">
+                                <Rectangle x:Name="g0l" Width="2" Fill="{DynamicResource BorderBrush}" HorizontalAlignment="Center" />
+                            </Border>
+                            <Border x:Name="g1" Width="18" Background="Transparent" Cursor="Hand" Tag="1"
+                                    Visibility="{Binding Guide1Visibility}" ToolTip="{Binding Guide1Tip}"
+                                    MouseLeftButtonDown="Guide_MouseDown">
+                                <Rectangle x:Name="g1l" Width="2" Fill="{DynamicResource BorderBrush}" HorizontalAlignment="Center" />
+                            </Border>
+                        </StackPanel>
+                        <Border x:Name="row" Grid.Column="1" Padding="12,9" BorderThickness="3,0,0,0"
                                 BorderBrush="Transparent" Background="Transparent">
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -196,7 +238,14 @@
                                 </Border>
                             </Grid>
                         </Border>
+                        </Grid>
                         <DataTemplate.Triggers>
+                            <Trigger SourceName="g0" Property="IsMouseOver" Value="True">
+                                <Setter TargetName="g0l" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                            <Trigger SourceName="g1" Property="IsMouseOver" Value="True">
+                                <Setter TargetName="g1l" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
                             <DataTrigger Binding="{Binding Kind}" Value="0">
                                 <Setter TargetName="row" Property="Background" Value="{DynamicResource Panel2Brush}" />
                                 <Setter TargetName="row" Property="Margin" Value="0,8,0,2" />
@@ -246,9 +295,12 @@
                     </Border>
 
                     <TextBlock Style="{StaticResource H2}" Text="HOW SHOULD IT TRIGGER?" Margin="0,18,0,6" />
-                    <ListBox x:Name="ModeList" ItemTemplate="{StaticResource ModeTemplate}" SelectionChanged="ModeList_SelectionChanged" />
+                    <ComboBox x:Name="ModeList" ItemTemplate="{StaticResource ModeTemplate}" MinHeight="34"
+                              HorizontalAlignment="Stretch" SelectionChanged="ModeList_SelectionChanged" />
+                    <TextBlock Style="{StaticResource Muted}" FontSize="11.5" TextWrapping="Wrap" Margin="0,8,0,0"
+                               Text="{Binding SelectedItem.Description, ElementName=ModeList}" />
                     <TextBlock x:Name="PanelModeNote" Style="{StaticResource Muted}" FontSize="11.5" TextWrapping="Wrap"
-                               Margin="0,8,0,0" />
+                               Margin="0,6,0,0" />
 
                     <StackPanel Margin="0,18,0,0">
                         <Button Content="Bind a different input…" Click="PanelRebind_Click" HorizontalAlignment="Stretch"

@@ -130,6 +130,7 @@ public sealed class ButtonGridControl : FrameworkElement
         var panel = Brushes2.Get("PanelBrush");
         var border = Brushes2.Get("Border2Brush");
         var deep = Brushes2.Get("AccentDeepBrush");
+        var redirect = Brushes2.Get("RedirectBrush");
         var onAccent = Brushes2.Get("OnAccentBrush");
         var text = Brushes2.Get("TextBrush");
         var muted = Brushes2.Get("MutedBrush");
@@ -142,8 +143,10 @@ public sealed class ButtonGridControl : FrameworkElement
             var rect = new Rect((i % cols) * (Cell + Gap) + 0.5, (i / cols) * (CellH + Gap) + 0.5, Cell - 1, CellH - 1);
             bool lit = i < _lit.Length && _lit[i];
             bool sel = n == _selected;
-            var fill = lit ? accent : sel ? deep : (n == _hover ? Brushes2.Get("HoverBrush") : panel);
-            var pen = new Pen(sel || lit || n == _hover ? accent : border, sel ? 2 : 1);
+            // A held button that is redirected to an action lights in its own colour.
+            var litBrush = _replaced.Contains(n) ? redirect : accent;
+            var fill = lit ? litBrush : sel ? deep : (n == _hover ? Brushes2.Get("HoverBrush") : panel);
+            var pen = new Pen(lit ? litBrush : sel || n == _hover ? accent : border, sel ? 2 : 1);
             dc.DrawGeometry(fill, pen, ChamferGeometry.Create(rect, cut));
             var ft = new FormattedText(n.ToString("00", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight, tf, 15, lit ? onAccent : (_marked.Contains(n) || sel ? text : muted), dpi);

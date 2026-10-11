@@ -10,7 +10,7 @@
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Grid>
+        <Grid x:Name="Shell">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="220" />
                 <ColumnDefinition Width="*" />
@@ -56,5 +56,11 @@
                 <TextBlock x:Name="StatusLast" Style="{StaticResource Muted}" FontFamily="{StaticResource MonoFont}" />
             </StackPanel>
         </Border>
+
+        <!-- start screen: covers the whole window, nothing behind it is reachable -->
+        <v:OnboardingView x:Name="Onboarding" Grid.RowSpan="2" Visibility="Collapsed" Panel.ZIndex="100" />
+
+        <!-- dialogs and messages: each one is a dimmed layer with a card, added here while it is open -->
+        <Grid x:Name="OverlayHost" Grid.RowSpan="2" Panel.ZIndex="200" />
     </Grid>
 </Window>

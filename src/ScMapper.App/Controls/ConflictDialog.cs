@@ -33,17 +33,7 @@ public static class ConflictDialog
         panel.Children.Add(scroll);
         panel.Children.Add(close);
 
-        var win = new Window
-        {
-            Title = "Check this profile",
-            Content = panel,
-            SizeToContent = SizeToContent.WidthAndHeight,
-            ResizeMode = ResizeMode.NoResize,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = owner,
-            Background = (Brush)Application.Current.FindResource("BgBrush"),
-            ShowInTaskbar = false,
-        };
+        var win = new OverlayWindow { Content = panel };
 
         Button Flat(string text, Action click)
         {
@@ -63,9 +53,8 @@ public static class ConflictDialog
             foreach (var cf in all)
             {
                 var item = cf;
-                string where = $"{item.Stick.Name} · {InputNames.Pretty(item.Input)}"
-                               + (c.ButtonLabel(item.Layout, item.Input) is { } l ? $" “{l}”" : "")
-                               + $"  ·  stick layout “{item.Layout.Name}”";
+                string where = $"{item.Layout.Name} · {InputNames.Pretty(item.Input)}"
+                               + (c.ButtonLabel(item.Layout, item.Input) is { } l ? $" “{l}”" : "");
                 var action = c.Catalog?.Find(item.Map, item.Action)?.Label ?? item.Action;
                 var title = new TextBlock { Text = where, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
                 var what = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = (Brush)Application.Current.FindResource("WarnBrush") };

@@ -54,7 +54,8 @@ public sealed partial class AppController
         lock (_gate)
         {
             setup = ActiveSetup;
-            layouts = Store.Data.Sticks
+            // An unplugged stick is inactive: its bindings are not deployed, so they cannot clash with anything.
+            layouts = Store.Data.Sticks.Where(IsConnected)
                 .Select(s => (Stick: s, Layout: Store.Profile(s.ProfileId)))
                 .Where(x => x.Layout != null).Select(x => (x.Stick, x.Layout!)).ToList();
         }
@@ -82,7 +83,7 @@ public sealed partial class AppController
 
                     // The game's own joystick defaults only exist for the first stick, and only while the action
                     // has no joystick binding of its own (an "unbound" marker counts as one).
-                    if (!setup.NoDefaults && stick.ScInstance == 1 && Catalog != null)
+                    if (setup.UsesDefaults("js") && stick.ScInstance == 1 && Catalog != null)
                         foreach (var d in Catalog.AllActions)
                         {
                             if (!d.Joystick || string.IsNullOrWhiteSpace(d.DefaultJoystick)) continue;

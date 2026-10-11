@@ -124,6 +124,15 @@ public sealed class Setup
     /// </summary>
     public bool NoDefaults { get; set; }
     /// <summary>
+    /// The game's defaults, but without the joystick ones: those are not shown and, on deploy, are unbound in
+    /// Star Citizen, so own stick bindings never collide with them. Keyboard, mouse and gamepad stay as shipped.
+    /// Stored as "KeyboardMouseOnly" in older files.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonPropertyName("KeyboardMouseOnly")]
+    public bool NoStickDefaults { get; set; }
+    /// <summary>Whether the game's default bindings of a device family ("kb", "mo", "gp", "js") count in this profile.</summary>
+    public bool UsesDefaults(string device) => !NoDefaults && (!NoStickDefaults || device != "js");
+    /// <summary>
     /// Conflicts of this profile the user chose to ignore (see AppController.FindConflicts). Not part of the
     /// saved content: ignoring something never makes the profile "modified".
     /// </summary>

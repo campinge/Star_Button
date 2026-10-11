@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows;
+using System.Windows.Threading;
 using ScMapper.Core;
 using ScMapper.Core.Storage;
 using ScMapper.Platform;
@@ -55,7 +56,37 @@ public partial class App : Application
             _controller!.Changed += Apply;
             Apply();
         }
-        if (!args.Contains("--minimized")) _window.Show();
+        // A stick without a profile is not guessed at: the user is asked, before anything else, with the window up.
+        // Started minimized (autostart) the tray tells instead of a window popping up in front of the game.
+        _controller.NewDeviceSeen += d => _window.Dispatcher.BeginInvoke(() => OnNewDevice(d));
+        if (!args.Contains("--minimized"))
+        {
+            _window.Show();   // the Sticks page shows a stick that needs a profile; nothing pops up on top
+        }
+        else if (_controller.UnassignedDevices.Count > 0) Announce(_controller.UnassignedDevices.Count);
+    }
+
+    /// <summary>A joystick appeared while running: never a dialog over the game, only a notice and the badge.</summary>
+    private void OnNewDevice(ScMapper.Core.Model.DeviceInfo d)
+    {
+        if (_window == null || _controller == null || (_window.IsVisible && _window.IsActive)) return;   // the badge says it
+        Announce(_controller.UnassignedDevices.Count, d.ProductName.Trim());
+    }
+
+    private void Announce(int count, string? model = null)
+    {
+        if (_tray == null) return;
+        var text = count == 1 ? $"{model ?? "A stick"} has no profile yet" : $"{count} sticks have no profile yet";
+        _tray.ShowBalloonTip(5000, "New joystick detected", text + ". Open Star Button to assign one.",
+            System.Windows.Forms.ToolTipIcon.Info);
+        _tray.BalloonTipClicked -= OnBalloonClicked;
+        _tray.BalloonTipClicked += OnBalloonClicked;
+    }
+
+    private void OnBalloonClicked(object? s, EventArgs e)
+    {
+        ShowWindow();
+        _window?.OpenProfiles();
     }
 
     private void MakeTray()

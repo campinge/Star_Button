@@ -9,6 +9,8 @@ public sealed class AppData
     /// <summary>Stick layouts (kind Stick). Older versions also kept the keyboard/gamepad layers here.</summary>
     public List<ControllerProfile> Profiles { get; set; } = new();
     public List<Setup> Setups { get; set; } = new();
+    /// <summary>Profile id → the device it was last used on (see <see cref="ProfileDevice"/>).</summary>
+    public Dictionary<Guid, ProfileDevice> ProfileDevices { get; set; } = new();
     public Guid? ActiveSetupId { get; set; }
     /// <summary>Action keys ("map/action") written to actionmaps.xml by the last deploy.</summary>
     public List<string> ManagedKeys { get; set; } = new();

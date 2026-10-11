@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
@@ -40,6 +41,16 @@ public sealed class ActionCatalog
     public List<ActionGroup> Groups { get; set; } = new();
     /// <summary>Activation modes seen in the default profile, most frequent first.</summary>
     public List<string> ActivationModes { get; set; } = new();
+
+    /// <summary>The tree the user sees (category > group > action), built by <see cref="CatalogLayout"/>; not cached.</summary>
+    [JsonIgnore] public List<UiGroup> Layout { get; set; } = new();
+
+    /// <summary>Category and group an action is listed under, as "Flight › Rotation".</summary>
+    public string PathOf(string map, string action)
+    {
+        var (c, g) = CatalogLayout.Place(map, action);
+        return $"{c} › {g}";
+    }
 
     public IEnumerable<ActionDef> AllActions => Groups.SelectMany(g => g.Actions);
 
@@ -156,7 +167,7 @@ public sealed class ActionCatalog
             try
             {
                 var cached = JsonSerializer.Deserialize<ActionCatalog>(File.ReadAllText(cacheFile));
-                if (cached is { Groups.Count: > 0 }) return cached;
+                if (cached is { Groups.Count: > 0 }) { CatalogLayout.Apply(cached); return cached; }
             }
             catch { /* rebuild */ }
         }
@@ -179,6 +190,7 @@ public sealed class ActionCatalog
         var catalog = FromDefaultProfile(profile, loc, version);
         Directory.CreateDirectory(cacheDir);
         File.WriteAllText(cacheFile, JsonSerializer.Serialize(catalog));
+        CatalogLayout.Apply(catalog);
         return catalog;
     }
 

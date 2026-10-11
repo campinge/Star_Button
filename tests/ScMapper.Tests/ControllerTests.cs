@@ -49,7 +49,7 @@ public class ControllerTests
         hub.List.Add(Dev(0, 1, 1, "Alpha"));
         hub.List.Add(Dev(1, 2, 2, "Beta"));
         using var c = new AppController(TmpStore(), hub, new FakeOutput());
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         Assert.Equal(2, c.Store.Data.Sticks.Count);
         Assert.All(c.Store.Data.Sticks, s => Assert.NotNull(c.Store.Profile(s.ProfileId)));
         Assert.Equal(new int?[] { 1, 2 }, c.Store.Data.Sticks.Select(s => s.ScInstance).ToArray());
@@ -62,11 +62,11 @@ public class ControllerTests
         var a = Dev(0, 1, 1, "Alpha"); var b = Dev(1, 2, 2, "Beta");
         hub.List.AddRange(new[] { a, b });
         using var c = new AppController(TmpStore(), hub, new FakeOutput());
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         hub.List.Clear();
         hub.List.Add(b with { EnumIndex = 0 });
         hub.List.Add(a with { EnumIndex = 1 });
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         var alpha = c.Store.Data.Sticks.Single(s => s.Name == "Alpha");
         var beta = c.Store.Data.Sticks.Single(s => s.Name == "Beta");
         Assert.Equal(2, alpha.ScInstance);
@@ -80,21 +80,19 @@ public class ControllerTests
         hub.List.Add(Dev(0, 8, 8, "Generic"));
         hub.List.Add(Dev(1, 8, 8, "Generic"));
         using var c = new AppController(TmpStore(), hub, new FakeOutput());
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         Assert.Equal(2, c.Store.Data.Sticks.Count);
-        c.Store.Data.Sticks[0].Name = "Comms";
-        c.Store.Data.Sticks[1].Name = "Weapons";
+        var comms = c.Store.Data.Sticks[0];   // a stick keeps its device name; identity is the record
         // New instance GUIDs and paths for both after a reboot.
         hub.List.Clear();
         hub.List.Add(new DeviceInfo(Guid.NewGuid(), "Generic", "Generic", 8, 8, "new0", 12, 2, 0, 0));
         hub.List.Add(new DeviceInfo(Guid.NewGuid(), "Generic", "Generic", 8, 8, "new1", 12, 2, 0, 1));
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         Assert.Equal(2, c.Store.Data.Sticks.Count);          // no duplicates created
         Assert.Equal(2, c.Match.Unmatched.Count);
         Assert.Equal(2, c.Match.Missing.Count);
 
         // The user maps them by hand.
-        var comms = c.Store.Data.Sticks.Single(s => s.Name == "Comms");
         c.AssignDevice(comms, c.Match.Unmatched[1]);
         Assert.True(c.IsConnected(comms));
         Assert.Equal(2, comms.ScInstance);
@@ -108,7 +106,7 @@ public class ControllerTests
         hub.List.Add(d);
         hub.States[d.InstanceGuid] = new DeviceState { Axes = new[] { 0.0, 0.0, -1.0 } };
         using var c = new AppController(TmpStore(), hub, new FakeOutput());
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
 
         CaptureResult? got = null;
         c.BeginCapture(r => got = r, includeAxes: true);
@@ -128,7 +126,7 @@ public class ControllerTests
         hub.List.Add(d);
         var output = new FakeOutput();
         using var c = new AppController(TmpStore(), hub, output);
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         var stick = c.Store.Data.Sticks[0];
         c.SetRule(c.Store.Profile(stick.ProfileId)!, "button3", new ButtonRule { OnPress = new KeyAction { Keys = "u" } });
 
@@ -151,7 +149,7 @@ public class ControllerTests
         var output = new FakeOutput();
         using var c = new AppController(TmpStore(), hub, output);
         c.Engine.TapMilliseconds = 1;
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         var prof = c.Store.Profile(c.Store.Data.Sticks[0].ProfileId)!;
         c.SetRule(prof, "button1", new ButtonRule { OnPress = new KeyAction { Keys = "u" }, OnRelease = new KeyAction { Keys = "lshift+d" } });
         c.SetRule(prof, "button2", new ButtonRule { OnPress = new KeyAction { Keys = "o", Hold = true } });

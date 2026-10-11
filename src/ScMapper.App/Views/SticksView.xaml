@@ -1,10 +1,11 @@
-<UserControl x:Class="ScMapper.App.Views.SticksView"
+﻿<UserControl x:Class="ScMapper.App.Views.SticksView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:ScMapper.App.Controls"
              PreviewMouseDown="View_PreviewMouseDown">
     <Grid Margin="24,20,24,20">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
@@ -21,15 +22,17 @@
                     <TextBlock x:Name="CountText" Style="{StaticResource Muted}" Margin="0,2,0,0" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="Profile manager" MinHeight="44" Padding="16,6" Margin="0,0,10,0"
-                            Click="ProfileManager_Click"
-                            ToolTip="Rename and delete profiles" />
-                    <Button Content="Profile assigner" MinHeight="44" Padding="16,6" Margin="0,0,10,0"
-                            Click="ProfileAssigner_Click"
-                            ToolTip="Assign a profile to each connected stick (press a button on a stick to find it)" />
+                    <Border x:Name="NoProfileToken" Visibility="Collapsed" Margin="0,0,12,0" Padding="10,5"
+                            Background="{DynamicResource WarnDimBrush}" BorderBrush="{DynamicResource WarnBrush}" BorderThickness="1"
+                            VerticalAlignment="Center">
+                        <TextBlock x:Name="NoProfileText" Foreground="{DynamicResource WarnBrush}" FontWeight="SemiBold" />
+                    </Border>
+                    <Button x:Name="ProfilesBtn" Content="Profiles" MinHeight="44" Padding="16,6" Margin="0,0,10,0"
+                            Click="Profiles_Click"
+                            ToolTip="Add, rename or delete profiles and choose which stick each one is on" />
                 </StackPanel>
                 <ComboBox x:Name="StickPicker" Grid.Column="2" Width="420" MinHeight="44" VerticalAlignment="Center"
-                          SelectionChanged="StickPicker_SelectionChanged" ToolTip="Choose a stick">
+                          SelectionChanged="StickPicker_SelectionChanged" ToolTip="Choose a profile">
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
                             <Grid MinHeight="30" ToolTip="{Binding Sub}">
@@ -54,11 +57,10 @@
                 </ComboBox>
             </Grid>
 
-            <TextBlock x:Name="EmptyHint" Grid.Row="1" Style="{StaticResource Muted}" Margin="0,60,0,0"
-                       HorizontalAlignment="Center" VerticalAlignment="Top"
-                       Text="Connect a joystick or press a button on one." />
+            <TextBlock x:Name="EmptyHint" Grid.Row="2" Style="{StaticResource Muted}" Margin="0,60,0,0"
+                       HorizontalAlignment="Center" VerticalAlignment="Top" />
 
-            <Grid x:Name="StickPanel" Grid.Row="1" Visibility="Collapsed">
+            <Grid x:Name="StickPanel" Grid.Row="2" Visibility="Collapsed">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -83,33 +85,11 @@
                                 <TextBlock x:Name="StatusText" Style="{StaticResource Muted}" />
                             </StackPanel>
                         </Grid>
-                        <TextBlock x:Name="ModelText" Style="{StaticResource Muted}" FontSize="12" Margin="2,6,0,0" />
-                        <TextBlock x:Name="ProfileText" FontSize="13" FontWeight="SemiBold" Margin="2,6,0,0"
-                                   ToolTip="Profile used by this stick. Change it in Profile assigner." />
-
-                        <!-- rarely needed: kept out of the way. Profiles are assigned in the Profile manager. -->
-                        <Button x:Name="AdvancedToggle" Style="{StaticResource Flat}" HorizontalAlignment="Left"
-                                Content="▸ ADVANCED" Click="AdvancedToggle_Click" Padding="0,4" Margin="0,10,0,0" />
-                        <StackPanel x:Name="AdvancedBody" Visibility="Collapsed">
-                            <Grid Margin="0,8,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="170" />
-                                    <ColumnDefinition Width="16" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock Style="{StaticResource H2}" Text="STAR CITIZEN NUMBER" Margin="0,0,0,6"
-                                               ToolTip="Auto = position in the DirectInput list, which is what Star Citizen uses" />
-                                    <ComboBox x:Name="InstanceCombo" MinHeight="38" SelectionChanged="InstanceCombo_SelectionChanged" />
-                                </StackPanel>
-                            </Grid>
-                        </StackPanel>
 
                         <Border x:Name="RemapBox" Visibility="Collapsed" Margin="0,16,0,0" Padding="14"
                                 Background="{DynamicResource WarnDimBrush}" BorderBrush="{DynamicResource WarnBrush}" BorderThickness="1">
                             <StackPanel>
-                                <TextBlock Text="Not connected. Which device is it now?" FontWeight="SemiBold"
+                                <TextBlock x:Name="RemapText" Text="Not connected. Which device is it now?" FontWeight="SemiBold"
                                            Foreground="{DynamicResource WarnBrush}" />
                                 <Grid Margin="0,10,0,0">
                                     <Grid.ColumnDefinitions>
@@ -155,10 +135,10 @@
                         </Grid>
                     </c:Card>
 
-                    <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer x:Name="RightScroll" Grid.Column="2" VerticalScrollBarVisibility="Auto" Background="Transparent">
                     <StackPanel>
                         <c:ButtonInspector x:Name="Inspector" />
-                        <c:Card Margin="0,16,0,0" Padding="16,10">
+                        <c:Card x:Name="EventsCard" Margin="0,16,0,0" Padding="16,10">
                             <StackPanel>
                                 <Button x:Name="EventsToggle" Style="{StaticResource Flat}" HorizontalAlignment="Left"
                                         Content="▸ RECENT EVENTS" Click="EventsToggle_Click" Padding="0,4" />
@@ -180,27 +160,5 @@
                 </Grid>
             </Grid>
 
-            <!-- unassigned device -->
-            <c:Card x:Name="DevicePanel" Grid.Row="1" VerticalAlignment="Top" Visibility="Collapsed">
-                <StackPanel>
-                    <TextBlock x:Name="DevTitle" Style="{StaticResource H1}" />
-                    <TextBlock x:Name="DevSub" Style="{StaticResource Muted}" Margin="0,4,0,0" TextWrapping="Wrap" />
-                    <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"
-                               Text="Not linked to a saved stick yet: a new stick, or one you named before (after re-plugging)." />
-                    <Button Content="Create new stick" Style="{StaticResource Accent}" MinHeight="40" HorizontalAlignment="Left"
-                            Padding="20,6" Margin="0,16,0,0" Click="CreateStick_Click" />
-                    <StackPanel x:Name="LinkBox" Margin="0,20,0,0">
-                        <TextBlock Style="{StaticResource H2}" Text="OR LINK TO A SAVED STICK" Margin="0,0,0,6" />
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <ComboBox x:Name="LinkCombo" MinHeight="38" />
-                            <Button Grid.Column="1" Content="Link" MinHeight="38" MinWidth="96" Margin="8,0,0,0" Click="Link_Click" />
-                        </Grid>
-                    </StackPanel>
-                </StackPanel>
-            </c:Card>
     </Grid>
 </UserControl>

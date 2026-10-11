@@ -32,6 +32,14 @@ public sealed partial class AppController : IDisposable
     /// <summary>A physical input edge (after matching). Stick is null for unknown devices.</summary>
     public event Action<InputEvent, StickRecord?>? InputSeen;
     public event Action<FiredRule>? RuleFired;
+    /// <summary>
+    /// A joystick nobody registered showed up while the app runs (once per device and session). Raised from the
+    /// device thread; UIs must marshal. Nothing is created for it: the user decides.
+    /// </summary>
+    public event Action<DeviceInfo>? NewDeviceSeen;
+
+    private bool _announceNew;
+    private readonly HashSet<Guid> _announced = new();
 
     public AppController(AppStore store, IDeviceHub hub, IKeyOutput output)
     {
@@ -88,19 +96,46 @@ public sealed partial class AppController : IDisposable
             d.Setups[0].IsGameProfile = true;
             Store.Save();
         }
-        // "Empty" ships with the app: a profile where nothing is bound, not even the game's defaults.
-        if (!d.Setups.Any(x => x.NoDefaults && x.IsBuiltIn))
+        // "Default" is the game's own defaults. Older versions let it mirror the game's file; whatever it
+        // holds from back then moves into a profile of its own.
+        foreach (var g in d.Setups.Where(x => x.IsGameProfile && HoldsContent(x)).ToList())
         {
-            var names = d.Setups.Select(x => x.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            d.Setups.Add(new Setup { Name = names.Contains("Empty") ? "Empty (built-in)" : "Empty", IsBuiltIn = true, NoDefaults = true });
+            var kept = new Setup
+            {
+                Name = UniqueSetupName("My bindings"), Keyboard = g.Keyboard, Gamepad = g.Gamepad,
+                StickLayouts = g.StickLayouts, SavedState = g.SavedState, IgnoredConflicts = g.IgnoredConflicts,
+            };
+            d.Setups.Add(kept);
+            var fresh = new Setup();
+            g.Keyboard = fresh.Keyboard;
+            g.Gamepad = fresh.Gamepad;
+            g.StickLayouts = fresh.StickLayouts;
+            g.IgnoredConflicts = fresh.IgnoredConflicts;
+            g.SavedState = TakeSnapshot(g);
+            if (d.ActiveSetupId == g.Id) d.ActiveSetupId = kept.Id;
             Store.Save();
         }
-        // "Empty" holds nothing by definition; repair copies that picked up bindings (e.g. from a game import).
-        foreach (var e in d.Setups.Where(x => x.IsBuiltIn && x.NoDefaults))
+        // Built-in profiles ship with the app; their content is only ever the game's defaults, as far as the
+        // profile keeps them.
+        void EnsureBuiltIn(Func<Setup, bool> exists, string name, Action<Setup> init)
         {
-            if (e.Keyboard.Binds.Count == 0 && e.Gamepad.Binds.Count == 0 && e.StickLayouts.Count == 0
-                && e.Keyboard.Rules.Count == 0 && e.Gamepad.Rules.Count == 0
-                && e.Keyboard.Actions.Count == 0 && e.Gamepad.Actions.Count == 0) continue;
+            if (d.Setups.Any(x => x.IsBuiltIn && exists(x))) return;
+            var names = d.Setups.Select(x => x.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var s = new Setup { Name = names.Contains(name) ? name + " (built-in)" : name, IsBuiltIn = true };
+            init(s);
+            d.Setups.Add(s);
+            Store.Save();
+        }
+        // "Empty": nothing is bound, not even the game's defaults.
+        EnsureBuiltIn(x => x.NoDefaults, "Empty", s => s.NoDefaults = true);
+        // "Keyboard & Mouse": the game's defaults as they come, only the joystick ones are empty.
+        EnsureBuiltIn(x => x.NoStickDefaults, "Keyboard & Mouse", s => s.NoStickDefaults = true);
+        // Built-in profiles hold nothing by definition; repair copies that picked up bindings (e.g. from a game import).
+        // An assigned stick profile without content is no content: it must survive a restart.
+        foreach (var e in d.Setups.Where(x => x.IsBuiltIn))
+        {
+            bool Holds(ControllerProfile? p) => p != null && (p.Binds.Count > 0 || p.Rules.Count > 0 || p.Actions.Count > 0);
+            if (!Holds(e.Keyboard) && !Holds(e.Gamepad) && !e.StickLayouts.Values.Any(id => Holds(Store.Profile(id)))) continue;
             e.Keyboard.Binds.Clear(); e.Keyboard.Rules.Clear(); e.Keyboard.Actions.Clear();
             e.Gamepad.Binds.Clear(); e.Gamepad.Rules.Clear(); e.Gamepad.Actions.Clear();
             e.StickLayouts.Clear();
@@ -109,7 +144,70 @@ public sealed partial class AppController : IDisposable
         }
         var a = d.Setups.FirstOrDefault(x => x.Id == d.ActiveSetupId) ?? d.Setups[0];
         d.ActiveSetupId = a.Id;
+        AdoptOrphanLayouts(a);
+        AdoptOrphanProfiles(a);
         return a;
+    }
+
+    /// <summary>
+    /// A stick profile no setup and no stick refers to is invisible (a stick lost it, e.g. while binding profiles
+    /// were switched). It goes back to a stick of its model that has no profile, as far as the device it was last
+    /// used on tells; otherwise it waits in a slot, to be linked to a stick by the user.
+    /// </summary>
+    private void AdoptOrphanProfiles(Setup active)
+    {
+        var d = Store.Data;
+        var used = d.Setups.SelectMany(x => x.StickLayouts.Values).Concat(d.Sticks.Where(s => s.ProfileId != null).Select(s => s.ProfileId!.Value)).ToHashSet();
+        bool changed = false;
+        foreach (var p in d.Profiles.Where(p => !p.IsSystem && !used.Contains(p.Id)).ToList())
+        {
+            d.ProfileDevices.TryGetValue(p.Id, out var origin);
+            var free = origin == null ? null : d.Sticks
+                .Where(s => s.ProfileId == null && origin.SameModel(s.Vid, s.Pid) && !active.StickLayouts.ContainsKey(s.Id))
+                .OrderByDescending(s => s.Buttons == origin.Buttons && s.Axes == origin.Axes)
+                .FirstOrDefault();
+            if (free != null) { free.ProfileId = p.Id; active.StickLayouts[free.Id] = p.Id; }
+            else
+            {
+                var slot = new StickRecord { Name = p.Name, ProfileId = p.Id };
+                d.Sticks.Add(slot);
+                active.StickLayouts[slot.Id] = p.Id;
+            }
+            changed = true;
+        }
+        if (changed) Store.Save();
+    }
+
+    /// <summary>
+    /// A setup can name sticks this machine has no record of (imported, or the stick was forgotten). Their profiles
+    /// would be invisible; give each one a record without a device, so it shows up as a profile waiting for one.
+    /// </summary>
+    private void AdoptOrphanLayouts(Setup setup)
+    {
+        var sticks = Store.Data.Sticks;
+        foreach (var (stickId, layoutId) in setup.StickLayouts.ToList())
+        {
+            if (sticks.Any(s => s.Id == stickId)) continue;
+            var layout = Store.Profile(layoutId);
+            if (layout == null || layout.IsSystem) { setup.StickLayouts.Remove(stickId); continue; }
+            sticks.Add(new StickRecord { Id = stickId, Name = layout.Name, ProfileId = layoutId });
+        }
+    }
+
+    /// <summary>A stick record that never saw a device: just a profile waiting to be given one.</summary>
+    private static bool IsSlot(StickRecord s) =>
+        s.Vid == 0 && s.Pid == 0 && s.InstanceGuid == null && string.IsNullOrEmpty(s.InterfacePath);
+
+    /// <summary>True when the setup's saved content (its live content if it was never saved) binds anything.</summary>
+    private bool HoldsContent(Setup s)
+    {
+        static bool Holds(ControllerProfile? p) => p != null && (p.Binds.Count > 0 || p.Rules.Count > 0 || p.Actions.Count > 0);
+        if (s.SavedState != null)
+        {
+            var snap = System.Text.Json.JsonSerializer.Deserialize<Snapshot>(s.SavedState);
+            return snap != null && (Holds(snap.Keyboard) || Holds(snap.Gamepad) || snap.Layouts.Any(l => Holds(l.Layout)));
+        }
+        return Holds(s.Keyboard) || Holds(s.Gamepad) || s.StickLayouts.Values.Any(id => Holds(Store.Profile(id)));
     }
 
     /// <summary>StickRecord.ProfileId is the live layout of the active setup; mirror it into the setup.</summary>
@@ -117,11 +215,19 @@ public sealed partial class AppController : IDisposable
     {
         var a = _active;
         if (a == null) return;
+        // A profile belongs to one stick. Should two hold it (two records pointing at one layout), the connected
+        // one keeps it; a profile is never driven by two devices.
+        var seen = new HashSet<Guid>();
+        foreach (var s in Store.Data.Sticks.Where(s => s.ProfileId != null).OrderByDescending(IsConnected).ToList())
+            if (!seen.Add(s.ProfileId!.Value)) s.ProfileId = null;
         foreach (var s in Store.Data.Sticks)
         {
             if (s.ProfileId is { } g) a.StickLayouts[s.Id] = g;
             else a.StickLayouts.Remove(s.Id);
         }
+        // Keys of records that are gone (a slot that took a device, a forgotten stick) would show a profile twice.
+        var ids = Store.Data.Sticks.Select(s => s.Id).ToHashSet();
+        foreach (var k in a.StickLayouts.Keys.Where(k => !ids.Contains(k)).ToList()) a.StickLayouts.Remove(k);
     }
 
     public void ActivateSetup(Setup setup)
@@ -132,12 +238,37 @@ public sealed partial class AppController : IDisposable
             SyncActiveFromSticks();
             _active = setup;
             Store.Data.ActiveSetupId = setup.Id;
+            AdoptOrphanLayouts(setup);
             var pool = Store.Data.Profiles.Select(p => p.Id).ToHashSet();
             foreach (var s in Store.Data.Sticks)
-                s.ProfileId = setup.StickLayouts.TryGetValue(s.Id, out var l) && pool.Contains(l) ? l : null;
+            {
+                if (setup.StickLayouts.TryGetValue(s.Id, out var l) && pool.Contains(l)) { s.ProfileId = l; continue; }
+                // A stick and its profile are the app's own setup, not part of a binding profile: switching
+                // binding profiles must not make the stick lose its profile. The new setup gets an empty layout
+                // of the same name for it (names may repeat across setups; they are one profile to the user).
+                if (Store.Profile(s.ProfileId) is { IsSystem: false } held)
+                {
+                    var layout = new ControllerProfile { Name = held.Name };
+                    Store.Data.Profiles.Add(layout);
+                    if (Store.Data.ProfileDevices.TryGetValue(held.Id, out var origin)) Store.Data.ProfileDevices[layout.Id] = origin;
+                    setup.StickLayouts[s.Id] = layout.Id;
+                    s.ProfileId = layout.Id;
+                }
+                else s.ProfileId = null;
+            }
             Store.Save();
         }
         Changed?.Invoke();
+    }
+
+    /// <summary>The layouts of one stick across all setups: one profile to the user, one layout per setup.</summary>
+    private HashSet<Guid> SiblingLayouts(Guid layoutId)
+    {
+        var res = new HashSet<Guid> { layoutId };
+        foreach (var stickId in Store.Data.Setups.SelectMany(x => x.StickLayouts).Where(kv => kv.Value == layoutId).Select(kv => kv.Key).ToList())
+            foreach (var x in Store.Data.Setups)
+                if (x.StickLayouts.TryGetValue(stickId, out var sib)) res.Add(sib);
+        return res;
     }
 
     // ---- saved state of a setup -----------------------------------------------------------------
@@ -162,17 +293,42 @@ public sealed partial class AppController : IDisposable
         {
             if (ReferenceEquals(s, _active)) SyncActiveFromSticks();
             var snap = new Snapshot { Keyboard = s.Keyboard, Gamepad = s.Gamepad };
+            // A binding profile holds the Star Citizen bindings only. What a stick button does by itself (actions,
+            // modifier, names) belongs to the stick's own profile: it is neither saved nor discarded here.
+            // A stick without bindings is no part of what the user saved.
             foreach (var kv in s.StickLayouts.OrderBy(k => k.Key))
-                snap.Layouts.Add(new SnapshotLayout { StickId = kv.Key, Layout = Store.Profile(kv.Value) });
+                if (Store.Profile(kv.Value) is { } layout && !IsEmptyLayout(layout))
+                    snap.Layouts.Add(new SnapshotLayout
+                    {
+                        StickId = kv.Key,
+                        Layout = new ControllerProfile { Id = layout.Id, Name = layout.Name, Binds = layout.Binds },
+                    });
             return System.Text.Json.JsonSerializer.Serialize(snap);
         }
     }
+
+    /// <summary>A saved state written by an older version also held actions and names of the stick profiles.</summary>
+    private static string Normalize(string saved)
+    {
+        try
+        {
+            var snap = System.Text.Json.JsonSerializer.Deserialize<Snapshot>(saved);
+            if (snap == null) return saved;
+            foreach (var l in snap.Layouts)
+                if (l.Layout != null) l.Layout = new ControllerProfile { Id = l.Layout.Id, Name = l.Layout.Name, Binds = l.Layout.Binds };
+            snap.Layouts.RemoveAll(l => l.Layout == null || l.Layout.Binds.Count == 0);
+            return System.Text.Json.JsonSerializer.Serialize(snap);
+        }
+        catch { return saved; }
+    }
+
+    private static bool IsEmptyLayout(ControllerProfile p) => p.Binds.Count == 0;
 
     /// <summary>True when the setup differs from what the user last saved.</summary>
     public bool IsSetupDirty(Setup s)
     {
         if (s.SavedState == null) { s.SavedState = TakeSnapshot(s); return false; }
-        return TakeSnapshot(s) != s.SavedState;
+        return TakeSnapshot(s) != Normalize(s.SavedState);
     }
 
     public bool IsActiveDirty => IsSetupDirty(ActiveSetup);
@@ -199,22 +355,19 @@ public sealed partial class AppController : IDisposable
             }
             Copy(s.Keyboard, snap.Keyboard);
             Copy(s.Gamepad, snap.Gamepad);
-            var keep = new Dictionary<Guid, Guid>();
+            // Only the Star Citizen bindings of the sticks go back. A stick keeps its profile, and the profile keeps
+            // everything it does by itself: nothing is removed, replaced or unassigned by discarding changes.
+            var restored = new HashSet<Guid>();
             foreach (var l in snap.Layouts)
-            {
-                if (l.Layout == null) continue;
-                var existing = Store.Data.Profiles.FirstOrDefault(p => p.Id == l.Layout.Id);
-                if (existing != null) Copy(existing, l.Layout);
-                else Store.Data.Profiles.Add(l.Layout);
-                keep[l.StickId] = l.Layout.Id;
-            }
-            s.StickLayouts = keep;
-            if (ReferenceEquals(s, _active))
-            {
-                var pool = Store.Data.Profiles.Select(p => p.Id).ToHashSet();
-                foreach (var st in Store.Data.Sticks)
-                    st.ProfileId = keep.TryGetValue(st.Id, out var id) && pool.Contains(id) ? id : null;
-            }
+                if (l.Layout != null && Store.Profile(l.Layout.Id) is { } existing)
+                {
+                    existing.Binds = l.Layout.Binds;
+                    restored.Add(existing.Id);
+                }
+            // Profiles without bindings in the saved state had none: what was bound to them since is dropped.
+            foreach (var id in s.StickLayouts.Values)
+                if (!restored.Contains(id) && Store.Profile(id) is { IsSystem: false } held)
+                    held.Binds = new();
             Store.Save();
         }
         Changed?.Invoke();
@@ -259,6 +412,7 @@ public sealed partial class AppController : IDisposable
             {
                 Name = UniqueSetupName(src.Name + " copy"),
                 NoDefaults = src.NoDefaults,
+                NoStickDefaults = src.NoStickDefaults,
                 Keyboard = CloneLayout(src.Keyboard),
                 Gamepad = CloneLayout(src.Gamepad),
             };
@@ -362,10 +516,12 @@ public sealed partial class AppController : IDisposable
         lock (_gate)
         {
             _ = ActiveSetup;
+            // Every stick that has a profile now keeps one in the new setup (empty apart from its rules), so
+            // reading the game's file has somewhere to put the stick bindings.
             foreach (var st in Store.Data.Sticks)
             {
                 var layout = Store.Profile(st.ProfileId);
-                if (layout != null && (layout.Rules.Count > 0 || layout.Actions.Count > 0))
+                if (layout != null && !layout.IsSystem)
                     rulesByStick[st.Id] = (layout.Name, Clone(layout.Rules), Clone(layout.Actions));
             }
         }
@@ -401,17 +557,6 @@ public sealed partial class AppController : IDisposable
         return (setup, imported, skipped);
     }
 
-    /// <summary>True while the active setup holds no binding at all (a fresh install).</summary>
-    public bool ActiveSetupIsEmpty()
-    {
-        lock (_gate)
-        {
-            var a = ActiveSetup;
-            if (a.Keyboard.Binds.Count > 0 || a.Gamepad.Binds.Count > 0) return false;
-            return !Store.Data.Sticks.Any(st => Store.Profile(st.ProfileId) is { } l && l.Binds.Count > 0);
-        }
-    }
-
     /// <summary>
     /// Stores the current content as a new profile and switches to it. The profile it came from goes back to
     /// its last saved state, so "Profile 1 + a small change" becomes "Profile 2" and Profile 1 stays as it was.
@@ -437,28 +582,31 @@ public sealed partial class AppController : IDisposable
 
     /// <summary>
     /// For a profile without the game's defaults: an "unbound" marker for every default binding of the game
-    /// (keyboard, mouse, gamepad, and the first joystick). Null for normal profiles.
+    /// (keyboard, mouse, gamepad, and the first joystick) of the device families this profile does not use.
+    /// Null for normal profiles.
     /// </summary>
     private IReadOnlyList<(string Map, string Action, string Input)>? UnboundDefaults()
     {
-        if (!ActiveSetup.NoDefaults || Catalog == null) return null;
+        var setup = ActiveSetup;
+        if (Catalog == null || (setup.UsesDefaults("kb") && setup.UsesDefaults("gp") && setup.UsesDefaults("js"))) return null;
         var list = new List<(string, string, string)>();
         foreach (var a in Catalog.AllActions)
         {
-            if (!string.IsNullOrWhiteSpace(a.DefaultKeyboard)) list.Add((a.Map, a.Name, "kb1_ "));
-            if (!string.IsNullOrWhiteSpace(a.DefaultMouse)) list.Add((a.Map, a.Name, "mo1_ "));
-            if (!string.IsNullOrWhiteSpace(a.DefaultGamepad)) list.Add((a.Map, a.Name, "gp1_ "));
-            if (a.Joystick && !string.IsNullOrWhiteSpace(a.DefaultJoystick)) list.Add((a.Map, a.Name, "js1_ "));
+            if (!setup.UsesDefaults("kb") && !string.IsNullOrWhiteSpace(a.DefaultKeyboard)) list.Add((a.Map, a.Name, "kb1_ "));
+            if (!setup.UsesDefaults("mo") && !string.IsNullOrWhiteSpace(a.DefaultMouse)) list.Add((a.Map, a.Name, "mo1_ "));
+            if (!setup.UsesDefaults("gp") && !string.IsNullOrWhiteSpace(a.DefaultGamepad)) list.Add((a.Map, a.Name, "gp1_ "));
+            if (!setup.UsesDefaults("js") && a.Joystick && !string.IsNullOrWhiteSpace(a.DefaultJoystick)) list.Add((a.Map, a.Name, "js1_ "));
         }
         return list;
     }
 
     /// <summary>
-    /// Sticks that take part in a deploy: the connected ones, plus those with a hand-set js number. A stick that
-    /// is not plugged in keeps its last js number, which another device may hold now - never write that.
+    /// Sticks that take part in a deploy: the connected ones. An unplugged stick is inactive - its bindings are
+    /// not written (and the ones written earlier are removed), and its last js number, which another device may
+    /// hold now, is never used.
     /// </summary>
     private List<StickRecord> DeploySticks() =>
-        Store.Data.Sticks.Where(s => s.ScInstanceManual || IsConnected(s)).ToList();
+        Store.Data.Sticks.Where(IsConnected).ToList();
 
     private IEnumerable<ControllerProfile> ProfilesForDeploy() =>
         Store.Data.Profiles.Where(p => !p.IsSystem).Concat(new[] { KeyboardMouseProfile, GamepadProfile });
@@ -529,17 +677,12 @@ public sealed partial class AppController : IDisposable
         DiscoverInstall();
         Hub.Start();
         Reconcile();
-        // First start: show what the game already has instead of an empty profile.
-        try
+        // What is plugged in at start is for the start-up dialog; only later arrivals are announced.
+        lock (_gate)
         {
-            // Only the game profile mirrors the game's file; "Empty" and user profiles stay as they are.
-            if (Install != null && File.Exists(Install.ActionMapsPath) && ActiveSetup.IsGameProfile && ActiveSetupIsEmpty())
-            {
-                ReadIntoActiveSetup();
-                SaveActiveSetup();
-            }
+            foreach (var d in Match.Unmatched) _announced.Add(d.InstanceGuid);
+            _announceNew = true;
         }
-        catch { /* an unreadable file just leaves the profile empty */ }
         _ = LoadCatalogAsync(false);
     }
     // ---- install / catalog -----------------------------------------------------------
@@ -604,9 +747,25 @@ public sealed partial class AppController : IDisposable
 
     public bool IsConnected(StickRecord s) => Match.Matched.ContainsKey(s.Id);
 
+    /// <summary>What the user calls this stick: the name of its profile ("Power und Comms"), else the device name.</summary>
+    public string StickLabel(StickRecord s) => Store.Profile(s.ProfileId)?.Name ?? s.Name;
+
+    /// <summary>The device the profile was last used on; null when it never was.</summary>
+    public ProfileDevice? OriginOf(ControllerProfile p)
+    {
+        lock (_gate) return Store.Data.ProfileDevices.GetValueOrDefault(p.Id);
+    }
+
+    /// <summary>
+    /// Whether the profile suits the device. A mismatch is a reason to ask the user, never to refuse: a broken
+    /// button or a replacement stick of another model are legitimate.
+    /// </summary>
+    public ProfileFit CheckFit(ControllerProfile p, DeviceInfo d) => ProfileFitCheck.Check(p, OriginOf(p), d);
+
     /// <summary>Re-run matching after devices or records changed; auto-register unambiguous new devices.</summary>
     public void Reconcile()
     {
+        List<DeviceInfo>? announce = null;
         lock (_gate)
         {
             var devices = Hub.Devices;
@@ -625,43 +784,127 @@ public sealed partial class AppController : IDisposable
                 Store.Save();
             }
 
-            // New device of a model nobody is waiting for -> register it with sensible defaults.
-            foreach (var d in m.Unmatched.ToList())
-            {
-                bool someoneWaiting = m.Missing.Any(s => s.Vid == d.Vid && s.Pid == d.Pid);
-                if (someoneWaiting) continue;
-                var baseName = d.ProductName.Trim();
-                int n = data.Sticks.Count(s => s.ProductName.Trim() == baseName) + 1;
-                // Reuse a leftover profile of this stick model (e.g. after a reinstall) before making a new one.
-                var profile = FreeProfileFor(baseName);
-                if (profile == null)
-                {
-                    profile = new ControllerProfile { Name = UniqueProfileName(baseName) };
-                    data.Profiles.Add(profile);
-                }
-                var rec = new StickRecord
-                {
-                    Name = n == 1 ? baseName : $"{baseName} {n}",
-                    ProfileId = profile.Id,
-                };
-                DeviceMatcher.Refresh(rec, d);
-                data.Sticks.Add(rec);
-            }
-            m = DeviceMatcher.Match(data.Sticks, devices);
-
+            // A device nobody knows is NOT registered here: it waits in Match.Unmatched until the user gives it a
+            // profile (see UnassignedDevices, CreateProfile, ApplyStickAssignments, RegisterNewDevices).
             foreach (var (stickId, dev) in m.Matched)
             {
                 var s = data.Sticks.First(x => x.Id == stickId);
                 DeviceMatcher.Refresh(s, dev);
                 if (!s.ScInstanceManual) s.ScInstance = dev.HasJsNumber ? dev.DefaultScInstance : null;
+                if (s.ProfileId is { } pid && Store.Profile(pid) is { IsSystem: false })
+                    data.ProfileDevices[pid] = ProfileDevice.Of(s);
             }
             Match = m;
             _byDevice = m.Matched.ToDictionary(kv => kv.Value.InstanceGuid, kv => data.Sticks.First(s => s.Id == kv.Key));
             _ = ActiveSetup;
             SyncActiveFromSticks();
             Store.Save();
+            if (_announceNew)
+                foreach (var d in m.Unmatched.Where(IsRegistrable))
+                    if (_announced.Add(d.InstanceGuid)) (announce ??= new()).Add(d);
         }
         Changed?.Invoke();
+        if (announce != null)
+            foreach (var d in announce) NewDeviceSeen?.Invoke(d);
+    }
+
+    /// <summary>A real joystick (js number, not an XInput pad).</summary>
+    private static bool IsRegistrable(DeviceInfo d) => d.HasJsNumber;
+
+    /// <summary>Devices that need a profile in the active setup: unknown ones and known ones without a profile here.</summary>
+    public IReadOnlyList<DeviceInfo> UnassignedDevices
+    {
+        get
+        {
+            lock (_gate)
+            {
+                var list = Match.Unmatched.Where(IsRegistrable).ToList();
+                foreach (var (stickId, dev) in Match.Matched)
+                    if (IsRegistrable(dev) && Store.Data.Sticks.FirstOrDefault(s => s.Id == stickId)?.ProfileId == null)
+                        list.Add(dev);
+                return list.OrderBy(d => d.EnumIndex).ToList();
+            }
+        }
+    }
+
+    /// <summary>
+    /// A profile of the active setup with the stick it is bound to. <see cref="ProfileSlot.Device"/> is null when
+    /// the stick is not plugged in (the profile is inactive) or never had a device.
+    /// </summary>
+    public sealed record ProfileSlot(ControllerProfile Profile, StickRecord Stick, DeviceInfo? Device)
+    {
+        public bool IsConnected => Device != null;
+        public bool HasNoDevice => Device == null && IsSlot(Stick);
+    }
+
+    /// <summary>The stick profiles of the active setup, in the order they were made.</summary>
+    public IReadOnlyList<ProfileSlot> ProfileSlots()
+    {
+        lock (_gate)
+        {
+            _ = ActiveSetup;
+            // In the order the profiles were made: renaming a profile or moving it to another stick never
+            // moves its row. A profile's layouts in other setups count as the same profile.
+            var order = Store.Data.Profiles.Select((p, i) => (p.Id, i)).ToDictionary(x => x.Id, x => x.i);
+            int Rank(ControllerProfile p) => SiblingLayouts(p.Id).Where(order.ContainsKey).Select(id => order[id]).DefaultIfEmpty(int.MaxValue).Min();
+            return Store.Data.Sticks
+                .Select(s => (Stick: s, Profile: Store.Profile(s.ProfileId)))
+                .Where(x => x.Profile is { IsSystem: false })
+                .Select(x => new ProfileSlot(x.Profile!, x.Stick, DeviceFor(x.Stick)))
+                .OrderBy(x => Rank(x.Profile))
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// A new, empty stick profile in the active setup, named <paramref name="name"/> (or after the device).
+    /// With a <paramref name="device"/> the profile is given to it right away. Only ever called by the user.
+    /// </summary>
+    public ControllerProfile CreateProfile(string? name = null, DeviceInfo? device = null)
+    {
+        ControllerProfile p;
+        lock (_gate)
+        {
+            _ = ActiveSetup;
+            var wanted = (name ?? device?.ProductName)?.Trim();
+            p = new ControllerProfile { Name = UniqueProfileName(string.IsNullOrEmpty(wanted) ? "New profile" : wanted) };
+            Store.Data.Profiles.Add(p);
+            Store.Data.Sticks.Add(new StickRecord { Name = p.Name, ProfileId = p.Id });
+        }
+        if (device != null) ApplyStickAssignments(new[] { (device, p.Id) });
+        else Touch();
+        return p;
+    }
+
+    /// <summary>
+    /// "A profile for every new stick": an explicit user action. A profile nobody uses and that was made for this
+    /// model is reused, else a new one named after the model is made. A device that could be one of the sticks
+    /// still waiting for its device is left alone: identical sticks cannot be told apart, the user identifies them.
+    /// </summary>
+    public int RegisterNewDevices()
+    {
+        int made = 0;
+        foreach (var d in UnassignedDevices)
+        {
+            bool someoneWaiting;
+            lock (_gate)
+                someoneWaiting = Match.Missing.Any(s => s.Vid == d.Vid && s.Pid == d.Pid && Store.Profile(s.ProfileId) != null);
+            if (someoneWaiting) continue;
+            var profile = FreeProfileFor(d.ProductName, null, d.Vid, d.Pid);
+            if (profile != null) ApplyStickAssignments(new[] { (d, profile.Id) });
+            else CreateProfile(device: d);
+            made++;
+        }
+        return made;
+    }
+
+    /// <summary>
+    /// The connected stick that has this js number. An unplugged stick keeps its last number, which another
+    /// device may hold now, so it never answers.
+    /// </summary>
+    public StickRecord? StickByInstance(int n)
+    {
+        lock (_gate) return DeploySticks().FirstOrDefault(s => s.ScInstance == n);
     }
 
     /// <summary>
@@ -669,7 +912,7 @@ public sealed partial class AppController : IDisposable
     /// Profiles are named after the model ("Generic USB Joystick", "Generic USB Joystick 2", ...), so four
     /// identical sticks reuse four existing profiles and only a fifth stick gets a new one.
     /// </summary>
-    public ControllerProfile? FreeProfileFor(string productName, IEnumerable<Guid>? alsoTaken = null)
+    public ControllerProfile? FreeProfileFor(string productName, IEnumerable<Guid>? alsoTaken = null, int vid = 0, int pid = 0)
     {
         lock (_gate)
         {
@@ -681,7 +924,10 @@ public sealed partial class AppController : IDisposable
             var rx = new System.Text.RegularExpressions.Regex(
                 "^" + System.Text.RegularExpressions.Regex.Escape(productName.Trim()) + @"( \d+)*$",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            return data.Profiles.FirstOrDefault(p => !p.IsSystem && !taken.Contains(p.Id) && rx.IsMatch(p.Name));
+            // Made for this model: by the device it was last used on, so a renamed profile still counts.
+            bool MadeFor(ControllerProfile p) => vid != 0 &&
+                data.ProfileDevices.TryGetValue(p.Id, out var o) && o.SameModel(vid, pid);
+            return data.Profiles.FirstOrDefault(p => !p.IsSystem && !taken.Contains(p.Id) && (MadeFor(p) || rx.IsMatch(p.Name)));
         }
     }
 
@@ -710,34 +956,93 @@ public sealed partial class AppController : IDisposable
     }
 
     /// <summary>
-    /// Profile manager: every listed device becomes the stick that owns the chosen profile. All pairs are
-    /// applied before matching runs again, so a half-finished swap is never matched on its own.
+    /// Every listed device becomes the stick that owns the chosen profile. All pairs are applied before matching
+    /// runs again, so a half-finished swap is never matched on its own. A profile of another setup is copied
+    /// first: editing it here must not change the other setup.
     /// </summary>
     public void ApplyStickAssignments(IEnumerable<(DeviceInfo Device, Guid ProfileId)> pairs)
     {
         lock (_gate)
         {
-            _ = ActiveSetup;
-            var sticks = Store.Data.Sticks;
-            foreach (var (dev, profileId) in pairs)
+            var active = ActiveSetup;
+            SyncActiveFromSticks();
+            var data = Store.Data;
+            var sticks = data.Sticks;
+            bool Hints(StickRecord s, DeviceInfo d) => s.InstanceGuid == d.InstanceGuid ||
+                (!string.IsNullOrEmpty(d.InterfacePath) &&
+                 string.Equals(s.InterfacePath, d.InterfacePath, StringComparison.OrdinalIgnoreCase));
+            bool UsedByOtherSetup(Guid id, Guid? exceptStick = null) => data.Setups.Any(x =>
+                !ReferenceEquals(x, active) && x.StickLayouts.Any(kv => kv.Value == id && kv.Key != exceptStick));
+
+            foreach (var (dev, requested) in pairs)
             {
-                var profile = Store.Profile(profileId);
-                if (profile == null) continue;
-                var rec = sticks.FirstOrDefault(s => s.ProfileId == profileId);
-                if (rec == null)
+                var profile = Store.Profile(requested);
+                if (profile == null || profile.IsSystem) continue;
+                var profileId = profile.Id;
+                if (!active.StickLayouts.ContainsValue(profileId) && UsedByOtherSetup(profileId))
                 {
-                    rec = new StickRecord { Name = dev.ProductName.Trim(), ProfileId = profileId };
+                    var copy = CloneLayout(profile);
+                    data.Profiles.Add(copy);
+                    if (data.ProfileDevices.TryGetValue(profile.Id, out var origin)) data.ProfileDevices[copy.Id] = origin;
+                    profileId = copy.Id;
+                }
+
+                var devRec = _byDevice.GetValueOrDefault(dev.InstanceGuid) ?? sticks.FirstOrDefault(s => Hints(s, dev));
+                var profRec = sticks.FirstOrDefault(s => s.ProfileId == profileId);
+                StickRecord rec;
+                if (profRec != null && IsSlot(profRec) && devRec != null && devRec != profRec)
+                {
+                    // A profile waiting for a device meets a device we already know: the device's own record
+                    // takes the profile and what it had waits in the slot instead. No second record appears.
+                    var had = devRec.ProfileId;
+                    devRec.ProfileId = profileId;
+                    profRec.ProfileId = had is { } h && h != profileId && Store.Profile(h) != null ? h : null;
+                    if (profRec.ProfileId == null && !data.Setups.Any(x => x.StickLayouts.ContainsKey(profRec.Id) && !ReferenceEquals(x, active)))
+                        sticks.Remove(profRec);
+                    rec = devRec;
+                }
+                else if (profRec != null) rec = profRec;   // the stick of this profile moves to the device
+                else if (devRec != null)
+                {
+                    // The device's stick takes another profile; the one it had stays, waiting for a device.
+                    rec = devRec;
+                    var had = rec.ProfileId;
+                    rec.ProfileId = profileId;
+                    if (had is { } h && h != profileId && Store.Profile(h) is { IsSystem: false } kept)
+                        sticks.Add(new StickRecord { Name = kept.Name, ProfileId = h });
+                }
+                else
+                {
+                    var baseName = dev.ProductName.Trim();
+                    int n = sticks.Count(s => s.ProductName.Trim() == baseName) + 1;
+                    rec = new StickRecord { Name = n == 1 ? baseName : $"{baseName} {n}", ProfileId = profileId };
                     sticks.Add(rec);
                 }
-                foreach (var other in sticks.Where(s => s.Id != rec.Id && (s.InstanceGuid == dev.InstanceGuid ||
-                             (!string.IsNullOrEmpty(dev.InterfacePath) &&
-                              string.Equals(s.InterfacePath, dev.InterfacePath, StringComparison.OrdinalIgnoreCase)))))
+                foreach (var other in sticks.Where(s => s.Id != rec.Id && Hints(s, dev)))
                 {
                     other.InstanceGuid = null;
                     other.InterfacePath = null;
                 }
                 DeviceMatcher.Refresh(rec, dev);
             }
+        }
+        Reconcile();
+    }
+
+    /// <summary>
+    /// Takes the profile away from its stick (the profile stays, without a device) or from a device: the stick
+    /// keeps its identity and just has no profile in the active setup.
+    /// </summary>
+    public void DetachDevice(StickRecord stick)
+    {
+        lock (_gate)
+        {
+            _ = ActiveSetup;
+            var profileId = stick.ProfileId;
+            if (profileId == null) return;
+            // The profile waits in a slot of its own; the physical stick is free for another profile.
+            Store.Data.Sticks.Add(new StickRecord { Name = Store.Profile(profileId)?.Name ?? stick.Name, ProfileId = profileId });
+            stick.ProfileId = null;
         }
         Reconcile();
     }
@@ -932,10 +1237,12 @@ public sealed partial class AppController : IDisposable
     {
         lock (_gate)
         {
-            _ = ActiveSetup;
-            var ids = profiles.Where(p => !p.IsSystem).Select(p => p.Id).ToHashSet();
+            _ = ActiveSetup; SyncActiveFromSticks();
+            var ids = new HashSet<Guid>();
+            foreach (var p in profiles.Where(p => !p.IsSystem)) ids.UnionWith(SiblingLayouts(p.Id));
             if (ids.Count == 0) return;
             Store.Data.Profiles.RemoveAll(p => ids.Contains(p.Id));
+            foreach (var id in ids) Store.Data.ProfileDevices.Remove(id);
             foreach (var s in Store.Data.Sticks.Where(s => s.ProfileId is { } g && ids.Contains(g))) s.ProfileId = null;
             foreach (var setup in Store.Data.Setups)
             {
@@ -943,6 +1250,9 @@ public sealed partial class AppController : IDisposable
                     setup.StickLayouts.Remove(k);
                 setup.SavedState = null;
             }
+            // A slot (a profile that never had a device) goes with its profile.
+            Store.Data.Sticks.RemoveAll(s => IsSlot(s) && s.ProfileId == null &&
+                                             !Store.Data.Setups.Any(x => x.StickLayouts.ContainsKey(s.Id)));
         }
         Touch();
     }
@@ -971,9 +1281,12 @@ public sealed partial class AppController : IDisposable
         if (name.Length == 0 || p.IsSystem || name == p.Name) return;
         lock (_gate)
         {
-            var taken = Store.Data.Profiles.Where(o => o != p).Select(o => o.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            SyncActiveFromSticks();
+            var siblings = SiblingLayouts(p.Id);
+            var taken = Store.Data.Profiles.Where(o => !siblings.Contains(o.Id)).Select(o => o.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var n = name;
             for (int i = 2; taken.Contains(n); i++) n = $"{name} {i}";
+            foreach (var o in Store.Data.Profiles.Where(o => siblings.Contains(o.Id))) o.Name = n;
             p.Name = n;
         }
         Touch();
@@ -1071,9 +1384,10 @@ public sealed partial class AppController : IDisposable
             }
             if (r.JsInstance is not { } inst || r.JsInputName is not { } input) continue;
             if (input != " " && !InputName().IsMatch(ScInputCodes.SplitJsInput(input).Input)) { skipped++; continue; }
-            var stick = Store.Data.Sticks.FirstOrDefault(s => s.ScInstance == inst);
-            if (stick == null) { skipped++; continue; }
-            var prof = EnsureProfile(stick);
+            // Only a connected stick with a profile can take the binding; nothing is created for the rest.
+            var stick = StickByInstance(inst);
+            var prof = stick == null ? null : Store.Profile(stick.ProfileId);
+            if (prof == null || prof.IsSystem) { skipped++; continue; }
             string? mode = r.MultiTap == "2" ? "double_tap" : r.ActivationMode;
             if (prof.Binds.Any(b => b.Map == r.Map && b.Action == r.Action && b.Input == input)) continue;
             prof.Binds.RemoveAll(b => b.Map == r.Map && b.Action == r.Action);
@@ -1108,9 +1422,9 @@ public sealed partial class AppController : IDisposable
         string input, marker;
         if (dev == "js")
         {
-            var stick = Store.Data.Sticks.FirstOrDefault(s => s.ScInstance == n);
-            if (stick == null) return false;
-            prof = EnsureProfile(stick);
+            var stick = StickByInstance(n);
+            if (stick == null || Store.Profile(stick.ProfileId) is not { IsSystem: false } held) return false;
+            prof = held;
             input = raw[m.Length..];
             marker = " ";
         }
@@ -1131,7 +1445,7 @@ public sealed partial class AppController : IDisposable
             && (dev == "js" || (b.Input.Length >= 2 && b.Input[..2] == dev));
         if (!prof.Binds.Any(SameDevice))
         {
-            var def = ActiveSetup.NoDefaults ? null : Catalog?.Find(map, action);
+            var def = ActiveSetup.UsesDefaults(dev) ? Catalog?.Find(map, action) : null;
             bool hasDefault = def != null && dev switch
             {
                 "kb" => !string.IsNullOrWhiteSpace(def.DefaultKeyboard),
@@ -1165,9 +1479,9 @@ public sealed partial class AppController : IDisposable
         string input;
         if (dev == "js")
         {
-            var stick = Store.Data.Sticks.FirstOrDefault(s => s.ScInstance == n);
-            if (stick == null) return false;
-            prof = EnsureProfile(stick);
+            var stick = StickByInstance(n);
+            if (stick == null || Store.Profile(stick.ProfileId) is not { IsSystem: false } held) return false;
+            prof = held;
             input = raw[m.Length..];
         }
         else

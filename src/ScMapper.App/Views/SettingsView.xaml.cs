@@ -81,7 +81,7 @@ public partial class SettingsView : UserControl
         var found = ScLocator.FindAll(dlg.SelectedPath);
         if (found.Count == 0)
         {
-            MessageBox.Show("No Data.p4k found in a LIVE/PTU/... subfolder of that folder.", "Not found",
+            Controls.Msg.Show("No Data.p4k found in a LIVE/PTU/... subfolder of that folder.", "Not found",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -118,7 +118,7 @@ public partial class SettingsView : UserControl
         try { Autostart.Set(AutostartCheck.IsChecked == true); }
         catch (Exception ex)
         {
-            MessageBox.Show("Could not change the Windows startup entry: " + ex.Message, "Settings",
+            Controls.Msg.Show("Could not change the Windows startup entry: " + ex.Message, "Settings",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         AutostartCheck.IsChecked = Autostart.IsEnabled;
@@ -164,7 +164,7 @@ public partial class SettingsView : UserControl
         }
         if (ScLocator.IsGameRunning())
         {
-            MessageBox.Show(AppController.GameRunningMessage + "\n\nClose Star Citizen, then try again.", "Game running",
+            Controls.Msg.Show(AppController.GameRunningMessage + "\n\nClose Star Citizen, then try again.", "Game running",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }

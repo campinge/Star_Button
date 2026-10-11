@@ -65,11 +65,10 @@ public partial class ButtonInspector : UserControl
         Body.Visibility = Visibility.Visible;
         var prof = _c.Store.Profile(_stick.ProfileId);
         var label = prof == null ? null : _c.ButtonLabel(prof, _input);
-        var where = $"{_stick.Name} · {InputNames.Pretty(_input)}";
-        Title.Text = label ?? where;
-        if (LabelBox.Text != (label ?? "")) LabelBox.Text = label ?? "";
-        LabelHint.Visibility = LabelBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        SaveLabelBtn.Content = "Save";
+        var where = $"{_c.StickLabel(_stick)} · {InputNames.Pretty(_input)}";
+        _defaultName = where;
+        _shownName = label ?? where;
+        if (LabelBox.Text != _shownName) LabelBox.Text = _shownName;
         Subtitle.Text = (label != null ? where + "   ·   " : "") +
             (prof == null ? "No stick layout assigned" : $"Layout: {prof.Name}" +
             (_stick.ScInstance is { } n ? $"   ·   Star Citizen: js{n}_{_input}" : ""));
@@ -278,7 +277,7 @@ public partial class ButtonInspector : UserControl
         // What
         if (isGame)
         {
-            var group = row.Map != null ? c.Catalog?.Groups.FirstOrDefault(g => g.Name == row.Map) : null;
+            var path = row.Map != null && row.ActionName != null ? c.Catalog?.PathOf(row.Map, row.ActionName) : null;
             var what = new DockPanel();
             var change = new Button { Content = "Change", Style = (Style)FindResource("Flat"), MinHeight = 30 };
             change.Click += (_, _) => ChangeTarget(prof, row, spec);
@@ -286,7 +285,7 @@ public partial class ButtonInspector : UserControl
             what.Children.Add(change);
             what.Children.Add(new TextBlock
             {
-                Text = group != null ? $"{group.Category} › {group.Label}" : row.Map, Style = (Style)FindResource("Muted"),
+                Text = path ?? row.Map, Style = (Style)FindResource("Muted"),
                 VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
             });
             st.Children.Add(Field("Action", what));
@@ -312,7 +311,16 @@ public partial class ButtonInspector : UserControl
         {
             var own = new KeyCaptureBox { MinHeight = 34, MinWidth = 220, HorizontalAlignment = HorizontalAlignment.Left };
             own.SetComboSilently(row.Keys);
-            own.ComboChanged += combo => Apply(prof, row, spec with { Keys = combo }, rebuild: false);
+            own.ComboChanged += combo =>
+            {
+                if (KeyPlanner.DangerReason(combo) is { } danger)
+                {
+                    Msg.Show(Window.GetWindow(this), "This key combination cannot be used on a button: " + danger);
+                    own.SetComboSilently(row.Keys);
+                    return;
+                }
+                Apply(prof, row, spec with { Keys = combo }, rebuild: false);
+            };
             return Field("Key", own);
         }
 
@@ -347,7 +355,10 @@ public partial class ButtonInspector : UserControl
             box.SetComboSilently(key.Combo);
             box.ComboChanged += combo =>
             {
-                c.SetActionKey(spec.Map!, spec.Action!, combo);
+                if (KeyPlanner.DangerReason(combo) is { } danger)
+                    Msg.Show(Window.GetWindow(this), "This key combination cannot be used on a button: " + danger);
+                else
+                    c.SetActionKey(spec.Map!, spec.Action!, combo);
                 Refresh();
             };
             var line = new StackPanel { Orientation = Orientation.Horizontal };
@@ -374,7 +385,10 @@ public partial class ButtonInspector : UserControl
         var none = new KeyCaptureBox { MinHeight = 34, MinWidth = 220, HorizontalAlignment = HorizontalAlignment.Left };
         none.ComboChanged += combo =>
         {
-            c.SetActionKey(spec.Map!, spec.Action!, combo);
+            if (KeyPlanner.DangerReason(combo) is { } danger)
+                Msg.Show(Window.GetWindow(this), "This key combination cannot be used on a button: " + danger);
+            else
+                c.SetActionKey(spec.Map!, spec.Action!, combo);
             Refresh();
         };
         var noneLine = new StackPanel { Orientation = Orientation.Horizontal };
@@ -397,47 +411,58 @@ public partial class ButtonInspector : UserControl
 
     private void ChangeTarget(ControllerProfile prof, ButtonActionRow row, ActionSpec spec)
     {
-        var pick = ActionPicker.Ask(Window.GetWindow(this), _c?.Catalog, "Change action");
-        if (pick == null) return;
-        Apply(prof, row, spec with { Map = pick.Map, Action = pick.Action, Keys = pick.Keys });
+        if (_c == null) return;
+        var pick = ActionPicker.Ask(Window.GetWindow(this), _c, "Change action");
+        if (pick?.Keys == null) return;
+        Apply(prof, row, spec with { Map = null, Action = null, Keys = pick.Keys });
     }
 
     private void Add_Click(object s, RoutedEventArgs e)
     {
         if (_c == null || _stick == null || _input == null) return;
-        var pick = ActionPicker.Ask(Window.GetWindow(this), _c.Catalog, "Add action", allowModifier: true);
+        var pick = ActionPicker.Ask(Window.GetWindow(this), _c, "Add action", allowModifier: true);
         if (pick == null) return;
-        var prof = _c.EnsureProfile(_stick);
+        var prof = _c.Store.Profile(_stick.ProfileId);
+        if (prof == null) return;
         if (pick.Modifier != null) _c.SetKeyModifierButton(prof, _input, pick.Modifier);
-        else _c.AddAction(prof, _input, new ActionSpec(ButtonTrigger.Pressed, pick.Map, pick.Action, pick.Keys));
+        else _c.AddAction(prof, _input, new ActionSpec(ButtonTrigger.Pressed, null, null, pick.Keys));
         Refresh();
     }
 
     // ---- button name ----------------------------------------------------------------------------
 
-    private void LabelBox_TextChanged(object s, TextChangedEventArgs e)
-    {
-        LabelHint.Visibility = LabelBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (!_loading) SaveLabelBtn.Content = "Save";
-    }
+    // The heading is the editor: it shows the custom name, or the default "stick · button" name.
+    private string _defaultName = "";
+    private string _shownName = "";
 
     private void LabelBox_KeyDown(object s, KeyEventArgs e)
     {
-        if (e.Key != Key.Enter) return;
-        SaveLabel();
-        e.Handled = true;
+        if (e.Key == Key.Enter)
+        {
+            SaveLabel();
+            Keyboard.ClearFocus();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            LabelBox.Text = _shownName;
+            Keyboard.ClearFocus();
+            e.Handled = true;
+        }
     }
 
-    private void SaveLabel_Click(object s, RoutedEventArgs e) => SaveLabel();
+    private void LabelBox_LostFocus(object s, RoutedEventArgs e) => SaveLabel();
 
     private void SaveLabel()
     {
-        if (_c == null || _stick == null || _input == null) return;
-        var prof = _c.EnsureProfile(_stick);
-        _c.SetButtonLabel(prof, _input, LabelBox.Text);
+        if (_loading || _c == null || _stick == null || _input == null) return;
+        var text = LabelBox.Text.Trim();
+        if (text == _shownName) return;
+        var prof = _c.Store.Profile(_stick.ProfileId);
+        if (prof == null) return;
+        // Empty or the default name means "no custom name".
+        _c.SetButtonLabel(prof, _input, text.Length == 0 || text == _defaultName ? "" : text);
         Refresh();
-        SaveLabelBtn.Content = "✓ Saved";
-        Keyboard.ClearFocus();
     }
 
     private void ClearAll_Click(object s, RoutedEventArgs e)

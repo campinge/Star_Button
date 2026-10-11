@@ -65,10 +65,12 @@ public class ModifierTests
  <actionmap name="spaceship_movement"><action name="v_pitch_up"><rebind input="js4_lshift+button1"/></action></actionmap>
 </ActionProfiles></ActionMaps>
 """);
-        using var c = new AppController(new AppStore(Tmp("store")), new FakeHub(), new FakeOutput());
-        var prof = new ControllerProfile { Name = "P" };
-        c.Store.Data.Sticks.Add(new StickRecord { Name = "Right", ScInstance = 4, ProfileId = prof.Id });
-        c.Store.Data.Profiles.Add(prof);
+        // The stick must be plugged in: an unplugged one does not own its number.
+        var hub = new FakeHub();
+        hub.List.Add(new DeviceInfo(Guid.NewGuid(), "Right", "Right", 1, 1, "path3", 12, 2, 0, 3));   // js4
+        using var c = new AppController(new AppStore(Tmp("store")), hub, new FakeOutput());
+        c.Reconcile(); c.RegisterNewDevices();
+        var prof = c.Store.Profile(c.Store.Data.Sticks.Single().ProfileId)!;
 
         var (imported, skipped) = c.ImportFromActionMaps(ActionMapsFile.Load(path));
         Assert.Equal(1, imported);
@@ -125,7 +127,7 @@ public class ModifierTests
         var output = new FakeOutput();
         using var c = new AppController(new AppStore(Tmp("store")), hub, output);
         c.Engine.TapMilliseconds = 1;
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         var prof = c.Store.Profile(c.Store.Data.Sticks[0].ProfileId)!;
         c.SetKeyModifierButton(prof, "button1", "lshift");
         c.AddAction(prof, "button2", new ActionSpec(ButtonTrigger.Pressed, null, null, "o"));

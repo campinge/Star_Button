@@ -31,17 +31,7 @@ public static class CloseDialog
         panel.Children.Add(remember);
         panel.Children.Add(buttons);
 
-        var win = new Window
-        {
-            Title = "Star Button",
-            Content = panel,
-            SizeToContent = SizeToContent.WidthAndHeight,
-            ResizeMode = ResizeMode.NoResize,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = owner,
-            Background = (System.Windows.Media.Brush)Application.Current.FindResource("BgBrush"),
-            ShowInTaskbar = false,
-        };
+        var win = new OverlayWindow { Content = panel };
         CloseAction? choice = null;
         tray.Click += (_, _) => { choice = CloseAction.Tray; win.DialogResult = true; };
         exit.Click += (_, _) => { choice = CloseAction.Exit; win.DialogResult = true; };

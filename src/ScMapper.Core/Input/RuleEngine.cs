@@ -40,8 +40,26 @@ public sealed class RuleEngine : IDisposable
         });
     }
 
+    private volatile bool _suspended;
+
+    /// <summary>
+    /// While true no key is sent (the binding mode wants to see what a button would send, not send it into
+    /// whatever window has the focus). Turning it on lets go of everything that is held.
+    /// </summary>
+    public bool Suspended
+    {
+        get => _suspended;
+        set
+        {
+            if (_suspended == value) return;
+            _suspended = value;
+            if (value) ReleaseAll();
+        }
+    }
+
     public void Handle(InputEvent e)
     {
+        if (_suspended) return;
         var stick = _stickForDevice(e.InstanceGuid);
         if (stick is null) return;
         var prof = _store.Profile(stick.ProfileId);
@@ -61,7 +79,7 @@ public sealed class RuleEngine : IDisposable
                     _queue.Writer.TryWrite(() => _output.Down(keys));
                 }
                 else Tap(keys);
-                Fired?.Invoke(new FiredRule(stick.Name, e.Input, $"press → {p.Keys}{(p.Hold ? " (hold)" : "")}", e.Utc));
+                Fired?.Invoke(new FiredRule(prof.Name, e.Input, $"press → {p.Keys}{(p.Hold ? " (hold)" : "")}", e.Utc));
             }
         }
         else
@@ -71,7 +89,7 @@ public sealed class RuleEngine : IDisposable
             if (rule.OnRelease is { IsEmpty: false } r && KeyCombo.TryParse(r.Keys, out var keys, out _))
             {
                 Tap(keys);
-                Fired?.Invoke(new FiredRule(stick.Name, e.Input, $"release → {r.Keys}", e.Utc));
+                Fired?.Invoke(new FiredRule(prof.Name, e.Input, $"release → {r.Keys}", e.Utc));
             }
         }
     }
@@ -105,7 +123,7 @@ public sealed class RuleEngine : IDisposable
             }
             else Tap(keys);
             var what = a.Action ?? combo;
-            Fired?.Invoke(new FiredRule(stick.Name, e.Input, $"{(e.Pressed ? "press" : "release")} → {what} ({combo})", e.Utc));
+            Fired?.Invoke(new FiredRule(prof.Name, e.Input, $"{(e.Pressed ? "press" : "release")} → {what} ({combo})", e.Utc));
         }
     }
 

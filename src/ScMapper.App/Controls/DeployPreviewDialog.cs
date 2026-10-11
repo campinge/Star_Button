@@ -26,8 +26,8 @@ public static class DeployPreviewDialog
             .Select(ch =>
             {
                 var def = c.Catalog?.Find(ch.Map, ch.Action);
-                var grp = c.Catalog?.Groups.FirstOrDefault(g => g.Name == ch.Map);
-                return (Change: ch, Label: def?.Label ?? ch.Action, Group: grp?.Label ?? ch.Map);
+                var path = c.Catalog?.PathOf(ch.Map, ch.Action) ?? ch.Map;
+                return (Change: ch, Label: def?.Label ?? ch.Action, Group: path);
             })
             .OrderBy(r => r.Group, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(r => r.Label, StringComparer.CurrentCultureIgnoreCase)
@@ -121,17 +121,7 @@ public static class DeployPreviewDialog
             });
         panel.Children.Add(buttons);
 
-        var win = new Window
-        {
-            Title = "Deploy",
-            Content = panel,
-            SizeToContent = SizeToContent.WidthAndHeight,
-            ResizeMode = ResizeMode.NoResize,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = owner,
-            Background = B("BgBrush"),
-            ShowInTaskbar = false,
-        };
+        var win = new OverlayWindow { Content = panel };
         ok.Click += (_, _) => win.DialogResult = true;
         return win.ShowDialog() == true;
     }
@@ -174,11 +164,11 @@ public static class DeployPreviewDialog
         int inst = int.Parse(m2.Groups[1].Value);
         var input = m2.Groups[2].Value;
         var pretty = InputNames.Pretty(input);
-        var stick = c.Store.Data.Sticks.FirstOrDefault(x => x.ScInstance == inst);
+        var stick = c.StickByInstance(inst);
         var prof = stick?.ProfileId is { } pid ? c.Store.Profile(pid) : null;
         var label = prof == null ? null
             : c.ButtonLabel(prof, input) ?? c.ButtonLabel(prof, ScInputCodes.SplitJsInput(input).Input);
-        var where = $"{stick?.Name ?? "js" + inst} · {pretty}";
+        var where = $"{(stick == null ? "js" + inst : c.StickLabel(stick))} · {pretty}";
         return label != null ? (label + mode, where) : (where + mode, null);
     }
 }

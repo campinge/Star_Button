@@ -20,17 +20,7 @@ public static class InputDialog
         panel.Children.Add(box);
         panel.Children.Add(buttons);
 
-        var win = new Window
-        {
-            Title = title,
-            Content = panel,
-            SizeToContent = SizeToContent.WidthAndHeight,
-            ResizeMode = ResizeMode.NoResize,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = owner,
-            Background = (System.Windows.Media.Brush)Application.Current.FindResource("BgBrush"),
-            ShowInTaskbar = false,
-        };
+        var win = new OverlayWindow { Title = title, Content = panel };
         string? result = null;
         ok.Click += (_, _) => { result = box.Text.Trim(); win.DialogResult = true; };
         win.Loaded += (_, _) => { box.Focus(); box.SelectAll(); };

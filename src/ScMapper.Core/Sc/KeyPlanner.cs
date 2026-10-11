@@ -52,18 +52,75 @@ public static class KeyPlanner
         return new ResolvedKey(null, KeySource.None);
     }
 
-    /// <summary>Combos already taken: game defaults, our keyboard layer and (optionally) raw rebinds of the game's file.</summary>
-    public static HashSet<string> UsedKeys(ControllerProfile keyboardLayer, ActionCatalog? catalog, IEnumerable<string>? rawRebinds = null)
+    /// <summary>
+    /// Combos already taken, each with a short note on who holds it: game defaults, our keyboard layer, raw
+    /// rebinds of the game's file and the own keys of button actions (<paramref name="buttonKeys"/>).
+    /// Keyed by <see cref="Canonical"/>.
+    /// </summary>
+    public static Dictionary<string, string> UsageMap(ControllerProfile keyboardLayer, ActionCatalog? catalog,
+        IEnumerable<string>? rawRebinds = null, IEnumerable<(string Combo, string Owner)>? buttonKeys = null)
     {
-        var used = new HashSet<string>();
-        void Add(string? sc) { if (!string.IsNullOrWhiteSpace(sc)) used.Add(Canonical(sc)); }
+        var used = new Dictionary<string, string>();
+        void Add(string? sc, string owner)
+        {
+            if (!string.IsNullOrWhiteSpace(sc)) used.TryAdd(Canonical(sc), owner);
+        }
+        // Buttons first: those are what the user just set up and wants to see named.
+        foreach (var (combo, owner) in buttonKeys ?? Array.Empty<(string, string)>()) Add(combo, owner);
         if (catalog != null)
-            foreach (var a in catalog.AllActions) Add(a.DefaultKeyboard);
-        foreach (var b in keyboardLayer.Binds.Where(b => IsKeyboard(b.Input) && !b.IsUnbound)) Add(StripPrefix(b.Input));
+            foreach (var a in catalog.AllActions) Add(a.DefaultKeyboard, a.Label);
+        foreach (var b in keyboardLayer.Binds.Where(b => IsKeyboard(b.Input) && !b.IsUnbound))
+            Add(StripPrefix(b.Input), b.Action);
         foreach (var r in rawRebinds ?? Array.Empty<string>())
-            if (IsKeyboard(r) && !r.EndsWith(' ')) Add(StripPrefix(r));
+            if (IsKeyboard(r) && !r.EndsWith(' ')) Add(StripPrefix(r), "Star Citizen");
         return used;
     }
+
+    /// <summary>Combos already taken (see <see cref="UsageMap"/>).</summary>
+    public static HashSet<string> UsedKeys(ControllerProfile keyboardLayer, ActionCatalog? catalog,
+        IEnumerable<string>? rawRebinds = null, IEnumerable<(string Combo, string Owner)>? buttonKeys = null) =>
+        UsageMap(keyboardLayer, catalog, rawRebinds, buttonKeys).Keys.ToHashSet();
+
+    // ---- combos we never offer ------------------------------------------------------------------
+
+    private static readonly HashSet<string> CtrlKeys = new() { "lctrl", "rctrl", "ctrl" };
+    private static readonly HashSet<string> AltKeys = new() { "lalt", "ralt", "alt" };
+    private static readonly HashSet<string> ShiftKeys = new() { "lshift", "rshift", "shift" };
+
+    /// <summary>
+    /// Why a combo must not be bound to a button, or null when it is fine. Pressing a joystick button must
+    /// never close a window, switch tasks, rotate the screen or type garbage.
+    /// </summary>
+    public static string? DangerReason(string? combo)
+    {
+        if (string.IsNullOrWhiteSpace(combo)) return null;
+        var parts = combo.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(p => p.ToLowerInvariant()).ToList();
+        bool ctrl = parts.Any(CtrlKeys.Contains), alt = parts.Any(AltKeys.Contains), shift = parts.Any(ShiftKeys.Contains);
+        var keys = parts.Where(p => !CtrlKeys.Contains(p) && !AltKeys.Contains(p) && !ShiftKeys.Contains(p)).ToList();
+        bool Has(string k) => keys.Contains(k);
+
+        if (Has("f4") && alt) return "Alt+F4 closes the active program (Star Citizen).";
+        if (Has("f4") && ctrl) return "Ctrl+F4 closes the active window.";
+        if (Has("w") && ctrl) return "Ctrl+W closes windows and tabs.";
+        if (Has("delete") && ctrl && alt) return "Ctrl+Alt+Delete opens the Windows security screen.";
+        if ((Has("esc") || Has("escape")) && (ctrl || alt))
+            return "Ctrl/Alt+Esc switches programs or opens Task Manager.";
+        if (Has("tab") && (alt || ctrl)) return "Alt/Ctrl+Tab switches programs.";
+        if (Has("space") && alt) return "Alt+Space opens the window menu.";
+        if (Has("enter") && alt) return "Alt+Enter toggles fullscreen.";
+        if (ctrl && alt && keys.Any(k => k is "up" or "down" or "left" or "right"))
+            return "Ctrl+Alt+Arrow rotates the screen on many graphics drivers.";
+        if (ctrl && alt && keys.Any(k => k.Length >= 2 && k[0] == 'f' && int.TryParse(k.AsSpan(1), out _)))
+            return "Ctrl+Alt+F-keys are graphics-driver hotkeys.";
+        if (alt && keys.Any(IsNumpadDigit))
+            return "Alt+Numpad digits type special characters.";
+        if (shift && keys.Any(IsNumpadDigit))
+            return "Shift+Numpad digits turn into cursor keys while Num Lock is on.";
+        return null;
+    }
+
+    private static bool IsNumpadDigit(string k) => k.Length == 3 && k.StartsWith("np") && char.IsDigit(k[2]);
 
     private static readonly string[][] Modifiers =
     {
@@ -78,16 +135,23 @@ public static class KeyPlanner
         yield return "np_add"; yield return "np_subtract"; yield return "np_multiply"; yield return "np_divide";
     }
 
-    /// <summary>Candidate combos, least likely to be in the way first.</summary>
+    /// <summary>Candidate combos, least likely to be in the way first. Dangerous ones are never offered.</summary>
     public static IEnumerable<string> Candidates()
     {
         foreach (var mods in Modifiers)
             foreach (var k in Keys())
-                yield return string.Join("+", mods.Append(k));
+            {
+                var combo = string.Join("+", mods.Append(k));
+                if (DangerReason(combo) == null) yield return combo;
+            }
     }
 
     public static string? FreeKey(ISet<string> used) =>
         Candidates().FirstOrDefault(c => !used.Contains(Canonical(c)));
+
+    /// <summary>All candidate combos no game action, profile or rebind uses.</summary>
+    public static List<string> FreeKeys(ISet<string> used) =>
+        Candidates().Where(c => !used.Contains(Canonical(c))).ToList();
 
     /// <summary>
     /// The next free candidate after <paramref name="after"/> (wrapping around), so repeated asks walk through

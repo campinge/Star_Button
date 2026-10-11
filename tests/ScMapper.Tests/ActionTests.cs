@@ -52,7 +52,61 @@ public class ActionTests
         var layer = new ControllerProfile { Kind = ProfileKind.KeyboardMouse };
         layer.Binds.Add(new ScBind { Map = "m", Action = "x", Input = "kb1_lctrl+f3" });
         var free = KeyPlanner.FreeKey(KeyPlanner.UsedKeys(layer, cat));
-        Assert.Equal("lctrl+f4", free);
+        Assert.Equal("lctrl+f5", free);
+    }
+
+    [Fact]
+    public void Press_and_release_actions_are_two_short_taps_even_when_the_button_is_held()
+    {
+        var hub = new FakeHub();
+        var d = Dev();
+        hub.List.Add(d);
+        var output = new FakeOutput();
+        using var c = new AppController(TmpStore(), hub, output);
+        c.Engine.TapMilliseconds = 1;
+        c.Reconcile(); c.RegisterNewDevices();
+        var prof = c.Store.Profile(c.Store.Data.Sticks[0].ProfileId)!;
+        c.AddAction(prof, "button1", new ActionSpec(ButtonTrigger.Pressed, null, null, "lctrl+f9"));
+        c.AddAction(prof, "button1", new ActionSpec(ButtonTrigger.Released, null, null, "ralt"));
+
+        hub.Raise(d.InstanceGuid, "button1", true);
+        Thread.Sleep(300);                       // held for a while
+        Assert.Equal(new[] { "down:1D+43", "up:1D+43" }, output.Snapshot());
+        hub.Raise(d.InstanceGuid, "button1", false);
+        WaitFor(() => output.Snapshot().Length >= 4);
+        Assert.Equal(new[] { "down:1D+43", "up:1D+43", "down:38", "up:38" }, output.Snapshot());
+    }
+
+    [Fact]
+    public void Button_with_actions_is_replaced_by_the_keys_it_sends_and_output_can_be_suspended()
+    {
+        var hub = new FakeHub();
+        var d = Dev();
+        hub.List.Add(d);
+        var output = new FakeOutput();
+        using var c = new AppController(TmpStore(), hub, output);
+        c.Engine.TapMilliseconds = 1;
+        c.Reconcile(); c.RegisterNewDevices();
+        var stick = c.Store.Data.Sticks[0];
+        var prof = c.Store.Profile(stick.ProfileId)!;
+
+        Assert.False(c.IsReplaced(stick, "button1"));
+        Assert.Empty(c.VirtualKeys(stick, "button1", true));
+
+        c.AddAction(prof, "button1", new ActionSpec(ButtonTrigger.Pressed, null, null, "lalt"));
+        c.AddAction(prof, "button1", new ActionSpec(ButtonTrigger.Released, null, null, "ralt"));
+
+        Assert.True(c.IsReplaced(stick, "button1"));
+        Assert.False(c.IsReplaced(stick, "button2"));
+        Assert.Equal(new[] { new VirtualKey("lalt", VirtualPhase.Tap) }, c.VirtualKeys(stick, "button1", true));
+        Assert.Equal(new[] { new VirtualKey("ralt", VirtualPhase.Tap) }, c.VirtualKeys(stick, "button1", false));
+
+        // Suspended output (binding mode) sends nothing at all.
+        c.Engine.Suspended = true;
+        hub.Raise(d.InstanceGuid, "button1", true);
+        hub.Raise(d.InstanceGuid, "button1", false);
+        Thread.Sleep(80);
+        Assert.Empty(output.Snapshot());
     }
 
     [Fact]
@@ -64,7 +118,7 @@ public class ActionTests
         var output = new FakeOutput();
         using var c = new AppController(TmpStore(), hub, output);
         c.Engine.TapMilliseconds = 1;
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         var prof = c.Store.Profile(c.Store.Data.Sticks[0].ProfileId)!;
 
         c.AddAction(prof, "button4", new ActionSpec(ButtonTrigger.Released, "spaceship_movement", "v_retract_landing_system", null));
@@ -98,7 +152,7 @@ public class ActionTests
         var hub = new FakeHub();
         hub.List.Add(Dev());
         using var c = new AppController(TmpStore(), hub, new FakeOutput());
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         var prof = c.Store.Profile(c.Store.Data.Sticks[0].ProfileId)!;
         c.AddAction(prof, "button2", new ActionSpec(ButtonTrigger.Pressed, "m", "a", null));
         Assert.Single(prof.Binds);
@@ -115,7 +169,7 @@ public class ActionTests
         var hub = new FakeHub();
         hub.List.Add(Dev());
         using var c = new AppController(TmpStore(), hub, new FakeOutput());
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         var prof = c.Store.Profile(c.Store.Data.Sticks[0].ProfileId)!;
         prof.Rules["button5"] = new ButtonRule
         {
@@ -134,7 +188,7 @@ public class ActionTests
         var hub = new FakeHub();
         hub.List.Add(Dev());
         var c = new AppController(TmpStore(), hub, new FakeOutput());
-        c.Reconcile();
+        c.Reconcile(); c.RegisterNewDevices();
         return (c, c.Store.Profile(c.Store.Data.Sticks[0].ProfileId)!);
     }
 
@@ -181,13 +235,20 @@ public class ActionTests
     }
 
     [Fact]
-    public void Direct_press_with_app_release_on_one_button_is_not_a_conflict()
+    public void Press_becomes_an_impulse_when_the_button_also_has_a_release_action()
     {
         var (c, prof) = Controller();
         using var _ = c;
         c.SetBind(prof, "m", "fire", "button4");
         c.AddAction(prof, "button4", new ActionSpec(ButtonTrigger.Released, null, null, "f9"));
-        Assert.Empty(c.FindConflicts());
+        // A direct binding would be held by the game as long as the button is down.
+        Assert.DoesNotContain(prof.Binds, b => !b.IsUnbound && b.Action == "fire");
+        Assert.Contains(prof.Actions, a => a.Trigger == ButtonTrigger.Pressed && a.Action == "fire");
+
+        // A press added afterwards is routed through the app as well.
+        c.AddAction(prof, "button4", new ActionSpec(ButtonTrigger.Pressed, "m", "gear", null));
+        Assert.DoesNotContain(prof.Binds, b => !b.IsUnbound && b.Action == "gear");
+        Assert.Contains(prof.Actions, a => a.Trigger == ButtonTrigger.Pressed && a.Action == "gear");
     }
 
     [Fact]
@@ -201,6 +262,28 @@ public class ActionTests
 
         c.SetActionKey("m", "gear", c.SuggestKey()!);
         Assert.Empty(c.FindConflicts());
+    }
+
+    [Theory]
+    [InlineData("lalt+f4")]
+    [InlineData("lctrl+lalt+f4")]
+    [InlineData("lctrl+f4")]
+    [InlineData("lctrl+lalt+delete")]
+    [InlineData("lalt+tab")]
+    [InlineData("lctrl+lshift+esc")]
+    [InlineData("lctrl+lalt+f9")]
+    [InlineData("lalt+np5")]
+    [InlineData("lshift+np2")]
+    public void Dangerous_combos_are_flagged(string combo) => Assert.NotNull(KeyPlanner.DangerReason(combo));
+
+    [Fact]
+    public void Dangerous_combos_are_never_offered()
+    {
+        var all = KeyPlanner.Candidates().ToList();
+        Assert.NotEmpty(all);
+        Assert.All(all, c => Assert.Null(KeyPlanner.DangerReason(c)));
+        Assert.DoesNotContain("lalt+f4", all);
+        Assert.Contains("lalt+f3", all);
     }
 
     [Fact]

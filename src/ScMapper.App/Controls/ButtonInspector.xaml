@@ -12,24 +12,12 @@
                     <Button x:Name="ClearAll" DockPanel.Dock="Right" Style="{StaticResource Flat}" Content="Clear everything"
                             Click="ClearAll_Click" VerticalAlignment="Top" />
                     <StackPanel>
-                        <TextBlock x:Name="Title" Style="{StaticResource H1}" TextTrimming="CharacterEllipsis" />
-                        <TextBlock x:Name="Subtitle" Style="{StaticResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                        <TextBox x:Name="LabelBox" FontSize="17" FontWeight="SemiBold" MinHeight="38"
+                                 VerticalContentAlignment="Center" KeyDown="LabelBox_KeyDown" LostFocus="LabelBox_LostFocus"
+                                 ToolTip="Click to rename this button, e.g. Landing gear (Enter saves, Esc cancels, empty = default name)" />
+                        <TextBlock x:Name="Subtitle" Style="{StaticResource Muted}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                 </DockPanel>
-
-                <Grid Margin="0,14,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBox x:Name="LabelBox" MinHeight="38" VerticalContentAlignment="Center"
-                             TextChanged="LabelBox_TextChanged" KeyDown="LabelBox_KeyDown"
-                             ToolTip="Your own name for this button, e.g. Landing gear (Enter saves)" />
-                    <TextBlock x:Name="LabelHint" Margin="10,0,0,0" IsHitTestVisible="False" VerticalAlignment="Center"
-                               Style="{StaticResource Muted}" Text="Button name (optional)" />
-                    <Button x:Name="SaveLabelBtn" Grid.Column="1" Style="{StaticResource Accent}" Content="Save"
-                            MinHeight="38" MinWidth="100" Margin="10,0,0,0" Click="SaveLabel_Click" />
-                </Grid>
 
                 <Border x:Name="ReplaceNotice" Margin="0,16,0,0" Padding="12,10"
                         Background="{DynamicResource WarnDimBrush}" BorderBrush="{DynamicResource WarnBrush}"

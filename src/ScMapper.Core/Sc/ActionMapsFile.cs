@@ -78,6 +78,18 @@ public sealed class ActionMapsFile
     public static string ProductString(string name, int vid, int pid) =>
         $"{name}  {{{pid:X4}{vid:X4}-0000-0000-0000-504944564944}}";
 
+    private static readonly System.Text.RegularExpressions.Regex ProductIds =
+        new(@"\{([0-9A-Fa-f]{4})([0-9A-Fa-f]{4})-0000-0000-0000-504944564944\}\s*$");
+
+    /// <summary>Vendor and product id out of a Product string ("Name  {PPPPVVVV-0000-...}"); null for anything else.</summary>
+    public static (int Vid, int Pid)? ParseProductIds(string? product)
+    {
+        if (product == null) return null;
+        var m = ProductIds.Match(product);
+        if (!m.Success) return null;
+        return (Convert.ToInt32(m.Groups[2].Value, 16), Convert.ToInt32(m.Groups[1].Value, 16));
+    }
+
     public void SetJoystickOption(int instance, string product)
     {
         var existing = Profile.Elements("options").FirstOrDefault(o =>

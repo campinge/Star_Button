@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -14,11 +14,6 @@ public sealed record StickRow(object Key, string Name, string Sub, string Badge,
 }
 
 public sealed record DeviceChoice(DeviceInfo Device, string Label)
-{
-    public override string ToString() => Label;
-}
-
-public sealed record InstanceChoice(int? N, string Label)
 {
     public override string ToString() => Label;
 }
@@ -55,7 +50,6 @@ public partial class SticksView : UserControl
     }
 
     private StickRecord? SelectedStick => _selectedKey is Guid id && _c != null ? _c.Store.Data.Sticks.FirstOrDefault(s => s.Id == id) : null;
-    private DeviceInfo? SelectedDevice => _selectedKey is DeviceInfo d ? d : null;
 
     public void Attach(AppController c)
     {
@@ -72,30 +66,67 @@ public partial class SticksView : UserControl
     {
         if (_c == null) return;
         _loading = true;
+        // The list is the PROFILES that have a stick plugged in. A profile without a stick lies in wait: it is
+        // given a stick with the Profiles button and shows up here from then on.
         var rows = new List<StickRow>();
-        foreach (var s in _c.Store.Data.Sticks)
+        var slots = _c.ProfileSlots();
+        foreach (var slot in slots.Where(x => x.IsConnected))
         {
-            bool on = _c.IsConnected(s);
-            var model = string.IsNullOrWhiteSpace(s.ProductName) ? "Unknown model" : s.ProductName.Trim();
-            var sub = on ? (model == s.Name ? "" : model) : "Not connected";
-            if (sub.Length == 0) sub = $"{s.Buttons} buttons · {s.Axes} axes";
-            rows.Add(new StickRow(s.Id, s.Name, sub,
-                s.ScInstance is { } n ? $"js{n}" : "", on ? B("GoodBrush") : B("WarnBrush"), false));
+            var s = slot.Stick;
+            var model = string.IsNullOrWhiteSpace(s.ProductName) ? "stick" : s.ProductName.Trim();
+            rows.Add(new StickRow(s.Id, slot.Profile.Name, $"Stick: {model}",
+                s.ScInstance is { } n ? $"js{n}" : "", B("GoodBrush"), false));
         }
-        foreach (var d in _c.Match.Unmatched)
-            rows.Add(new StickRow(d, d.ProductName.Trim(), $"New device · {d.Vid:X4}:{d.Pid:X4}",
-                $"js{d.DefaultScInstance}", B("AccentBrush"), true));
         StickPicker.ItemsSource = rows;
-        var sel = rows.FirstOrDefault(r => Equals(r.Key, _selectedKey))
-                  ?? rows.FirstOrDefault(r => r.Key is DeviceInfo di && _selectedKey is DeviceInfo old && di.InstanceGuid == old.InstanceGuid)
-                  ?? rows.FirstOrDefault();
+        StickPicker.Visibility = rows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var sel = rows.FirstOrDefault(r => Equals(r.Key, _selectedKey)) ?? rows.FirstOrDefault();
         StickPicker.SelectedItem = sel;
-        int online = _c.Store.Data.Sticks.Count(_c.IsConnected);
-        int fresh = _c.Match.Unmatched.Count;
-        CountText.Text = $"{online} connected" + (fresh > 0 ? $" · {fresh} new" : "");
+        int inactive = slots.Count - rows.Count;
+        CountText.Text = slots.Count == 0 ? "No profiles yet"
+            : $"{rows.Count} active profile{(rows.Count == 1 ? "" : "s")}" +
+              (inactive > 0 ? $" · {inactive} without a stick (Profiles button)" : "");
         _selectedKey = sel?.Key;
         _loading = false;
+        UpdateNoProfileHint();
         ShowSelected();
+    }
+
+    // ---- sticks without a profile ---------------------------------------------------------------
+    // Nothing is offered or created here: the Profiles button is the one place for that. This page only says
+    // that a stick is waiting, next to the button, and makes the button glow.
+
+    private bool _hinting;
+
+    private void UpdateNoProfileHint()
+    {
+        if (_c == null) return;
+        int waiting = _c.UnassignedDevices.Count;
+        bool on = waiting > 0;
+        NoProfileToken.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        NoProfileText.Text = waiting == 1 ? "1 stick without a profile" : $"{waiting} sticks without a profile";
+        if (on == _hinting) return;
+        _hinting = on;
+        if (on)
+        {
+            ProfilesBtn.Style = (Style)Application.Current.FindResource("Accent");
+            Controls.Glow.Start(ProfilesBtn);
+            ProfilesBtn.ToolTip = "Give the waiting stick a profile, or choose which stick each profile is on";
+        }
+        else
+        {
+            ProfilesBtn.ClearValue(StyleProperty);
+            Controls.Glow.Stop(ProfilesBtn);
+            ProfilesBtn.ToolTip = "Add, rename or delete profiles and choose which stick each one is on";
+        }
+    }
+
+    /// <summary>The start screen is done: show the profile it made last.</summary>
+    public void AfterOnboarding(string? lastName, int made = 1)
+    {
+        if (_c == null) return;
+        if (lastName != null && _c.ProfileSlots().FirstOrDefault(x => x.Profile.Name == lastName) is { } slot)
+            _selectedKey = slot.Stick.Id;
+        Rebuild();
     }
 
     private void StickPicker_SelectionChanged(object s, SelectionChangedEventArgs e)
@@ -111,20 +142,14 @@ public partial class SticksView : UserControl
         if (_c == null) return;
         _loading = true;
         var stick = SelectedStick;
-        var dev = SelectedDevice;
-        EmptyHint.Visibility = stick == null && dev == null ? Visibility.Visible : Visibility.Collapsed;
+        EmptyHint.Text = _c.UnassignedDevices.Count > 0
+            ? "A stick has no profile yet. Use the Profiles button to give it one."
+            : _c.ProfileSlots().Count > 0
+                ? "None of your profiles has a stick right now. Use the Profiles button to link a stick to a profile."
+                : "Connect a joystick: it gets its profile with the Profiles button.";
+        EmptyHint.Visibility = stick == null ? Visibility.Visible : Visibility.Collapsed;
         StickPanel.Visibility = stick != null ? Visibility.Visible : Visibility.Collapsed;
-        DevicePanel.Visibility = dev != null ? Visibility.Visible : Visibility.Collapsed;
 
-        if (dev != null)
-        {
-            DevTitle.Text = dev.ProductName.Trim();
-            DevSub.Text = $"{dev.Buttons} buttons · {dev.Axes} axes · {dev.Hats} hats · would be js{dev.DefaultScInstance} · {dev.Vid:X4}:{dev.Pid:X4}";
-            var missing = _c.Match.Missing;
-            LinkCombo.ItemsSource = missing;
-            LinkCombo.SelectedIndex = missing.Count > 0 ? 0 : -1;
-            LinkBox.Visibility = missing.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        }
         if (stick != null)
         {
             var d = _c.DeviceFor(stick);
@@ -133,21 +158,16 @@ public partial class SticksView : UserControl
             if (NameBox.Text != profileName) NameBox.Text = profileName;
             NameBox.IsEnabled = profile == null || !profile.IsSystem;
             SaveNameBtn.Content = "Save";
+            bool noStick = d == null && stick.Vid == 0 && stick.Pid == 0 && stick.InstanceGuid == null;
             StatusDot.Fill = d != null ? B("GoodBrush") : B("WarnBrush");
-            StatusText.Text = d != null ? "Connected" : "Not connected";
-            ModelText.Text = $"Stick: {stick.Name} · " +
-                             $"{stick.Buttons} buttons · {stick.Axes} axes · {stick.Hats} hats · {stick.Vid:X4}:{stick.Pid:X4}";
-            ProfileText.Text = profile != null ? "Profile name above - pick another profile in Profile assigner" : "No profile yet - type a name above to create one";
-            var choices = new List<InstanceChoice>
-            {
-                new(null, d != null ? $"Auto (js{d.DefaultScInstance})" : "Auto"),
-            };
-            choices.AddRange(Enumerable.Range(1, 16).Select(i => new InstanceChoice(i, $"js{i}")));
-            InstanceCombo.ItemsSource = choices;
-            InstanceCombo.SelectedItem = stick.ScInstanceManual && stick.ScInstance is { } cur
-                ? choices.FirstOrDefault(x => x.N == cur) : choices[0];
+            StatusText.Text = d != null ? "Connected" : noStick ? "No stick yet" : "Not connected · inactive";
+            RemapText.Text = noStick ? "No stick yet. Which stick is it?" : "Not connected. Which device is it now?";
+            StatusText.ToolTip = $"{stick.Name} · {stick.Buttons} buttons · {stick.Axes} axes · {stick.Hats} hats · " +
+                                 $"{stick.Vid:X4}:{stick.Pid:X4}";
+            NameBox.ToolTip = profile != null ? "Name of this stick's profile (Enter saves). Another profile on this stick: Profiles button."
+                : "No profile yet - type a name to create one";
             RemapBox.Visibility = d == null ? Visibility.Visible : Visibility.Collapsed;
-            RemapCombo.ItemsSource = _c.Match.Unmatched.Select(u => new DeviceChoice(u,
+            RemapCombo.ItemsSource = _c.UnassignedDevices.Select(u => new DeviceChoice(u,
                 $"{u.ProductName.Trim()} · {u.Vid:X4}:{u.Pid:X4} · {u.Buttons} btn · js{u.DefaultScInstance}")).ToList();
             RemapCombo.SelectedIndex = RemapCombo.Items.Count > 0 ? 0 : -1;
             ButtonsGrid.ButtonCount = stick.Buttons;
@@ -209,7 +229,7 @@ public partial class SticksView : UserControl
 
     private void OnInputSeen(ScMapper.Core.Input.InputEvent e, StickRecord? stick)
     {
-        var name = stick?.Name ?? _c?.Hub.Devices.FirstOrDefault(d => d.InstanceGuid == e.InstanceGuid)?.ProductName.Trim() ?? "?";
+        var name = (stick != null && _c != null ? _c.StickLabel(stick) : null) ?? _c?.Hub.Devices.FirstOrDefault(d => d.InstanceGuid == e.InstanceGuid)?.ProductName.Trim() ?? "?";
         var line = $"{e.Utc.ToLocalTime():HH:mm:ss.f}  {name,-28} {Controls.InputNames.Pretty(e.Input),-14} {(e.Pressed ? "pressed" : "released")}";
         Dispatcher.BeginInvoke(() =>
         {
@@ -255,6 +275,27 @@ public partial class SticksView : UserControl
     {
         if (e.OriginalSource is DependencyObject d && Keyboard.FocusedElement is TextBox tb && !IsInside(d, tb))
             Keyboard.ClearFocus();
+
+        // A click on the free space of the right-hand column (not the inspector, the events card or the
+        // scrollbar) drops the button selection.
+        if (e.OriginalSource is System.Windows.Media.Visual v && IsInside(v, RightScroll)
+            && !IsInside(v, Inspector) && !IsInside(v, EventsCard)
+            && !IsInsideScrollBar(v) && _selectedInput != null)
+            ClearSelection();
+    }
+
+    private static bool IsInsideScrollBar(DependencyObject d)
+    {
+        for (; d != null; d = System.Windows.Media.VisualTreeHelper.GetParent(d))
+            if (d is System.Windows.Controls.Primitives.ScrollBar) return true;
+        return false;
+    }
+
+    private void ClearSelection()
+    {
+        _selectedInput = null;
+        ButtonsGrid.Selected = -1;
+        if (_c != null && SelectedStick is { } st) Inspector.Show(_c, st, null);
     }
 
     private static bool IsInside(DependencyObject d, DependencyObject ancestor)
@@ -269,7 +310,8 @@ public partial class SticksView : UserControl
     {
         if (SelectedStick is not { } st || _c == null) return;
         // The box names the stick's profile; the stick itself keeps its device name.
-        var profile = _c.EnsureProfile(st);
+        var profile = _c.Store.Profile(st.ProfileId);
+        if (profile == null || profile.IsSystem) return;
         var name = NameBox.Text.Trim();
         if (name.Length == 0) { NameBox.Text = profile.Name; return; }
         _c.RenameProfile(profile, name);
@@ -278,41 +320,14 @@ public partial class SticksView : UserControl
         Keyboard.ClearFocus();
     }
 
-    private void ProfileAssigner_Click(object s, RoutedEventArgs e)
+    private void Profiles_Click(object s, RoutedEventArgs e) => OpenProfiles();
+
+    /// <summary>The profile list (rename, delete, which stick is on which); afterwards conflicts are checked again.</summary>
+    public void OpenProfiles()
     {
         if (_c == null) return;
-        Controls.ProfileAssignerDialog.Show(Window.GetWindow(this), _c);
+        Controls.ProfilesDialog.Show(Window.GetWindow(this), _c);
         Controls.ConflictDialog.ShowIfAny(Window.GetWindow(this), _c);
-    }
-
-    private void ProfileManager_Click(object s, RoutedEventArgs e)
-    {
-        if (_c == null) return;
-        Controls.ProfileManagerDialog.Show(Window.GetWindow(this), _c);
-    }
-
-    private void InstanceCombo_SelectionChanged(object s, SelectionChangedEventArgs e)
-    {
-        if (_loading || SelectedStick is not { } st || _c == null) return;
-        if (InstanceCombo.SelectedItem is not InstanceChoice ch) return;
-        if (ch.N is { } n)
-        {
-            st.ScInstanceManual = true;
-            st.ScInstance = n;
-        }
-        else
-        {
-            st.ScInstanceManual = false;
-            if (_c.DeviceFor(st) is { } d) st.ScInstance = d.DefaultScInstance;
-        }
-        _c.Touch();
-    }
-
-    private void AdvancedToggle_Click(object s, RoutedEventArgs e)
-    {
-        bool open = AdvancedBody.Visibility != Visibility.Visible;
-        AdvancedBody.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
-        AdvancedToggle.Content = (open ? "▾ " : "▸ ") + "Advanced";
     }
 
     private void EventsToggle_Click(object s, RoutedEventArgs e)
@@ -325,28 +340,10 @@ public partial class SticksView : UserControl
     private void RemapAssign_Click(object s, RoutedEventArgs e)
     {
         if (SelectedStick is not { } st || _c == null) return;
-        if (RemapCombo.SelectedItem is DeviceChoice ch)
+        if (RemapCombo.SelectedItem is DeviceChoice ch && _c.Store.Profile(st.ProfileId) is { } profile)
         {
-            _c.AssignDevice(st, ch.Device);
-            Rebuild();
-        }
-    }
-
-    private void CreateStick_Click(object s, RoutedEventArgs e)
-    {
-        if (SelectedDevice is not { } d || _c == null) return;
-        var rec = _c.AddStickFor(d);
-        _selectedKey = rec.Id;
-        Rebuild();
-    }
-
-    private void Link_Click(object s, RoutedEventArgs e)
-    {
-        if (SelectedDevice is not { } d || _c == null) return;
-        if (LinkCombo.SelectedItem is StickRecord st)
-        {
-            _c.AssignDevice(st, d);
-            _selectedKey = st.Id;
+            if (!Controls.ProfilesDialog.ConfirmFit(Window.GetWindow(this), _c, profile, ch.Device)) return;
+            _c.ApplyStickAssignments(new[] { (ch.Device, profile.Id) });
             Rebuild();
         }
     }
