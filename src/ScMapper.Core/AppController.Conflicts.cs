@@ -110,10 +110,6 @@ public sealed partial class AppController
     public IReadOnlyList<ButtonConflict> ConflictsOf(StickRecord stick, string input) =>
         FindConflicts().Where(c => c.Stick.Id == stick.Id && c.Input == input).ToList();
 
-    /// <summary>Inputs of a stick that are replaced by an action sent by Star Button.</summary>
-    public IReadOnlySet<string> ReplacedInputs(ControllerProfile layout) =>
-        layout.Actions.Select(a => a.Input).ToHashSet();
-
     /// <summary>The user chose to remove the Star Citizen binding that collides with a replaced button.</summary>
     public bool RemoveConflictingBinding(ButtonConflict c)
     {

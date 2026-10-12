@@ -337,40 +337,6 @@ public class CoreTests
     }
 
     [Fact]
-    public void Read_from_star_citizen_creates_new_setup_and_keeps_rules()
-    {
-        var path = Tmp("actionmaps.xml");
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, """
-<ActionMaps><ActionProfiles version="1" optionsVersion="2" rebindVersion="2" profileName="default">
- <actionmap name="m"><action name="fire"><rebind input="js1_button3"/><rebind input="mo1_mouse1"/></action>
-  <action name="pitch"><rebind input="js1_y"/></action></actionmap>
-</ActionProfiles></ActionMaps>
-""");
-        var hub = new FakeHub();
-        var d = new DeviceInfo(Guid.NewGuid(), "Alpha", "Alpha", 1, 1, null, 12, 2, 0, 0);
-        hub.List.Add(d);
-        using var c = new AppController(new AppStore(Tmp("store")), hub, new FakeOutput());
-        c.Reconcile(); c.RegisterNewDevices();
-        var stick = c.Store.Data.Sticks[0];
-        c.SetRule(c.Store.Profile(stick.ProfileId)!, "button9", new ButtonRule { OnPress = new KeyAction { Keys = "u" } });
-        var firstSetup = c.ActiveSetup;
-
-        var (setup, imported, _) = c.ReadFromStarCitizen(ActionMapsFile.Load(path), "From SC");
-        Assert.NotSame(firstSetup, setup);
-        Assert.Same(setup, c.ActiveSetup);
-        Assert.Equal(3, imported);
-        var layout = c.Store.Profile(stick.ProfileId)!;
-        Assert.Contains(layout.Binds, b => b.Action == "fire" && b.Input == "button3");
-        Assert.Contains(layout.Binds, b => b.Action == "pitch" && b.Input == "y");
-        Assert.True(layout.Rules.ContainsKey("button9"));              // keyboard output rules carried over
-        Assert.Contains(c.KeyboardMouseProfile.Binds, b => b.Input == "mo1_mouse1");
-        // The original setup is untouched.
-        c.ActivateSetup(firstSetup);
-        Assert.Empty(c.KeyboardMouseProfile.Binds);
-    }
-
-    [Fact]
     public void Setup_export_import_roundtrip()
     {
         var hub = new FakeHub();

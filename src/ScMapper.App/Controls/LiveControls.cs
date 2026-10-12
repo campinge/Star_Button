@@ -287,7 +287,26 @@ public sealed class KeyCaptureBox : TextBox
         GotKeyboardFocus += (_, _) => { if (string.IsNullOrEmpty(Text)) Tag = "capturing"; };
     }
 
-    private static string? Name(Key k) => k switch
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern uint MapVirtualKey(uint code, uint mapType);
+
+    /// <summary>
+    /// The key as a position on the keyboard: Star Citizen binds and Star Button sends scan codes, so the key
+    /// labelled Z on a German keyboard has to be recorded as the position US keyboards call Y. Falls back to the
+    /// layout based table for keys that have no scan code name.
+    /// </summary>
+    private static string? PositionName(Key k)
+    {
+        int vk = KeyInterop.VirtualKeyFromKey(k);
+        if (vk != 0 && vk != 0x90 /* NumLock shares a scan code with Pause */)
+        {
+            uint scan = MapVirtualKey((uint)vk, 0);   // MAPVK_VK_TO_VSC
+            bool ext = vk is 0x21 or 0x22 or 0x23 or 0x24 or 0x25 or 0x26 or 0x27 or 0x28 or 0x2D or 0x2E or 0x6F;
+            if (scan != 0 && ScMapper.Core.Input.KeyCombo.NameOfScan((ushort)scan, ext) is { } byPosition) return byPosition;
+        }
+        return LayoutName(k);
+    }
+
+    private static string? LayoutName(Key k) => k switch
     {
         >= Key.A and <= Key.Z => k.ToString().ToLowerInvariant(),
         >= Key.D0 and <= Key.D9 => ((int)k - (int)Key.D0).ToString(),
@@ -312,7 +331,7 @@ public sealed class KeyCaptureBox : TextBox
     };
 
     /// <summary>App name of a key or modifier ("lctrl", "r", "f5"), null for keys that cannot be bound.</summary>
-    internal static string? TokenOf(Key k) => ModName(k) ?? Name(k);
+    internal static string? TokenOf(Key k) => ModName(k) ?? PositionName(k);
 
     internal static bool IsModifierToken(string t) =>
         t is "lshift" or "rshift" or "lctrl" or "rctrl" or "lalt" or "ralt";
@@ -330,7 +349,7 @@ public sealed class KeyCaptureBox : TextBox
             Set(string.Join("+", _mods), commit: false);
             return;
         }
-        var n = Name(key);
+        var n = PositionName(key);
         if (n == null) return;
         Set(string.Join("+", _mods.Append(n)), commit: true);
     }

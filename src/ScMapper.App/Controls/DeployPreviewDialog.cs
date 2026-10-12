@@ -14,7 +14,7 @@ namespace ScMapper.App.Controls;
 /// </summary>
 public static class DeployPreviewDialog
 {
-    private static readonly Regex JsInput = new(@"^js(\d+)_(.+)$", RegexOptions.Compiled);
+    private static readonly Regex JsInput = new(@"^js(\d{1,4})_(.+)$", RegexOptions.Compiled);
     private static Brush B(string key) => (Brush)Application.Current.FindResource(key);
     private static Style S(string key) => (Style)Application.Current.FindResource(key);
 

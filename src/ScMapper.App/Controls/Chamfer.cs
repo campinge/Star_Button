@@ -71,7 +71,17 @@ public class Card : Border
         if (ActualWidth < 2 || ActualHeight < 2) return;
         var rect = new Rect(0.5, 0.5, ActualWidth - 1, ActualHeight - 1);
         var pen = BorderBrush == null || BorderThickness.Left <= 0 ? null : new Pen(BorderBrush, 1);
-        dc.DrawGeometry(Background, pen, ChamferGeometry.Create(rect, Cut));
+        var shape = ChamferGeometry.Create(rect, Cut);
+        dc.DrawGeometry(Background, pen, shape);
+        // Soft accent sheen from the top edge, so cards read as lit panels rather than flat boxes.
+        if (Application.Current.TryFindResource("AccentColor") is Color ac && ActualHeight > 40)
+        {
+            var sheen = new LinearGradientBrush(
+                Color.FromArgb(0x1C, ac.R, ac.G, ac.B), Color.FromArgb(0x00, ac.R, ac.G, ac.B), new Point(0, 0), new Point(0, 1));
+            sheen.GradientStops[1].Offset = 0.55;
+            sheen.Freeze();
+            dc.DrawGeometry(sheen, null, shape);
+        }
         // Accent ticks on the two uncut corners.
         if (Application.Current.TryFindResource("AccentBrush") is Brush acc && ActualWidth > 40 && ActualHeight > 40)
         {

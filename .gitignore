@@ -5,3 +5,7 @@ dist/
 *.user
 poc/.venv/
 poc/out/
+
+__pycache__/
+*.pyc
+release/

@@ -45,15 +45,85 @@ public sealed class AppStore
             try
             {
                 if (File.Exists(DataFile))
-                    Data = JsonSerializer.Deserialize<AppData>(File.ReadAllText(DataFile)) ?? new AppData();
+                    Data = Normalize(JsonSerializer.Deserialize<AppData>(File.ReadAllText(DataFile)) ?? new AppData());
             }
             catch
             {
                 // Keep a copy of an unreadable file instead of silently overwriting it.
-                File.Copy(DataFile, DataFile + $".corrupt-{DateTime.Now:yyyyMMddHHmmss}", true);
+                try { File.Copy(DataFile, DataFile + $".corrupt-{DateTime.Now:yyyyMMddHHmmss}", true); } catch { }
                 Data = new AppData();
             }
         }
+    }
+
+    /// <summary>
+    /// Valid JSON can still have the wrong shape (a hand edit, another tool, an older version): nulls where lists
+    /// are expected, repeated ids. Everything the rest of the app takes for granted is made true here, so a
+    /// damaged file degrades to "that part is empty" and never to an app that cannot start.
+    /// </summary>
+    public static AppData Normalize(AppData d)
+    {
+        d.Sticks ??= new();
+        d.Profiles ??= new();
+        d.Setups ??= new();
+        d.ProfileDevices ??= new();
+        d.ManagedKeys ??= new();
+        d.ManagedKbmKeys ??= new();
+        d.ManagedGamepadKeys ??= new();
+        d.Settings ??= new();
+        d.Settings.Channel ??= "LIVE";
+        d.Settings.Theme ??= "cyan";
+
+        d.Sticks.RemoveAll(s => s == null);
+        d.Profiles.RemoveAll(p => p == null);
+        d.Setups.RemoveAll(s => s == null);
+
+        void Fix(ControllerProfile p, ProfileKind? kind = null, string fallbackName = "Profile")
+        {
+            if (kind != null) p.Kind = kind.Value;
+            p.Name ??= fallbackName;
+            p.Rules ??= new();
+            p.Binds ??= new();
+            p.Actions ??= new();
+            p.Binds.RemoveAll(b => b == null);
+            p.Actions.RemoveAll(a => a == null);
+            foreach (var b in p.Binds) { b.Map ??= ""; b.Action ??= ""; b.Input ??= ""; }
+            foreach (var a in p.Actions) a.Input ??= "";
+            foreach (var k in p.Rules.Where(kv => kv.Value == null).Select(kv => kv.Key).ToList()) p.Rules.Remove(k);
+        }
+
+        // Ids are identities: a repeated one would make every ToDictionary / lookup in the app ambiguous.
+        var seen = new HashSet<Guid>();
+        foreach (var p in d.Profiles)
+        {
+            Fix(p);
+            if (!seen.Add(p.Id)) p.Id = Guid.NewGuid();
+        }
+        seen.Clear();
+        foreach (var s in d.Sticks)
+        {
+            s.Name ??= "";
+            s.ProductName ??= "";
+            if (!seen.Add(s.Id)) s.Id = Guid.NewGuid();
+        }
+        seen.Clear();
+        foreach (var s in d.Setups)
+        {
+            s.Name ??= "Profile";
+            s.Keyboard ??= new ControllerProfile { Name = "Keyboard & Mouse" };
+            s.Gamepad ??= new ControllerProfile { Name = "Gamepad" };
+            Fix(s.Keyboard, ProfileKind.KeyboardMouse, "Keyboard & Mouse");
+            Fix(s.Gamepad, ProfileKind.Gamepad, "Gamepad");
+            s.StickLayouts ??= new();
+            s.IgnoredConflicts ??= new();
+            if (!string.IsNullOrEmpty(s.SavedState))
+            {
+                try { using var _ = JsonDocument.Parse(s.SavedState); }
+                catch (JsonException) { s.SavedState = null; }
+            }
+            if (!seen.Add(s.Id)) s.Id = Guid.NewGuid();
+        }
+        return d;
     }
 
     public void Save()
@@ -68,15 +138,4 @@ public sealed class AppStore
 
     public ControllerProfile? Profile(Guid? id) => id is null ? null : Data.Profiles.FirstOrDefault(p => p.Id == id);
 
-    public static string ExportProfile(ControllerProfile p) => JsonSerializer.Serialize(p, Json);
-
-    public ControllerProfile ImportProfile(string json)
-    {
-        var p = JsonSerializer.Deserialize<ControllerProfile>(json) ?? throw new InvalidDataException("Empty profile");
-        p.Id = Guid.NewGuid();
-        if (Data.Profiles.Any(x => x.Name.Equals(p.Name, StringComparison.OrdinalIgnoreCase))) p.Name += " (imported)";
-        Data.Profiles.Add(p);
-        Save();
-        return p;
-    }
 }

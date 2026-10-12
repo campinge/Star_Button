@@ -259,20 +259,8 @@ public sealed partial class AppController
 
     private static (int? N, string Tail) SplitJs(string input)
     {
-        var m = System.Text.RegularExpressions.Regex.Match(input, @"^js(\d+)_(.+)$");
+        var m = System.Text.RegularExpressions.Regex.Match(input, @"^js(\d{1,4})_(.+)$");
         return m.Success ? ((int?)int.Parse(m.Groups[1].Value), m.Groups[2].Value) : ((int?)null, input);
     }
 
-    /// <summary>
-    /// Number of connected sticks whose number does not agree with the game's file or with Windows' order.
-    /// Zero when everything is consistent (or there is nothing to compare with).
-    /// </summary>
-    public int JsAttentionCount()
-    {
-        var file = TryLoadActionMaps();
-        List<StickRecord> sticks;
-        lock (_gate) sticks = Store.Data.Sticks.Where(IsConnected).ToList();
-        return sticks.Select(s => JsState(s, file))
-            .Count(x => x.Status == JsStatus.DiffersFromGame || x.WindowsDiffers);
-    }
 }

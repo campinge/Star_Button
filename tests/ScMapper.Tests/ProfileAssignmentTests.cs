@@ -165,7 +165,7 @@ public class ProfileAssignmentTests
 
         Assert.Empty(c.UnassignedDevices);
         Assert.Equal("Generic", p.Name);
-        Assert.Single(c.ProfileSlots().Where(s => s.IsConnected));
+        Assert.Single(c.ProfileSlots(), s => s.IsConnected);
     }
 
     [Fact]
@@ -278,7 +278,7 @@ public class ProfileAssignmentTests
         s1.ProfileId = s0.ProfileId;
         c.Touch();
 
-        Assert.Single(c.Store.Data.Sticks.Where(s => s.ProfileId == s0.ProfileId));
+        Assert.Single(c.Store.Data.Sticks, s => s.ProfileId == s0.ProfileId);
     }
 
     [Fact]

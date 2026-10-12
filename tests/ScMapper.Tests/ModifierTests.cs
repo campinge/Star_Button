@@ -55,6 +55,44 @@ public class ModifierTests
     }
 
     [Fact]
+    public void Deploy_does_not_cancel_a_js1_default_where_another_stick_binds_the_action()
+    {
+        // The game keeps one joystick rebind per action: a "js1_ " marker next to js4_y would erase the bind.
+        var path = Tmp("actionmaps.xml");
+        var p = new ControllerProfile { Name = "Flight" };
+        p.Binds.Add(new ScBind { Map = "spaceship_movement", Action = "v_pitch", Input = "y" });
+        var stick = new StickRecord { Name = "Right", Vid = 0x231D, Pid = 0x0200, ProductName = "VKBsim Gladiator NXT R", ScInstance = 4, ProfileId = p.Id };
+        var defaults = new List<(string Map, string Action, string Input)>
+        {
+            ("spaceship_movement", "v_pitch", "js1_ "),
+            ("spaceship_movement", "v_roll", "js1_ "),
+        };
+
+        Deployer.Apply(path, Path.Combine(Path.GetDirectoryName(path)!, "bk"), new[] { stick }, new[] { p },
+            Array.Empty<string>(), unboundDefaults: defaults);
+
+        var rebinds = ActionMapsFile.Load(path).Rebinds().ToList();
+        Assert.Equal(new[] { "js4_y" }, rebinds.Where(r => r.Action == "v_pitch").Select(r => r.Input));
+        Assert.Equal(new[] { "js1_ " }, rebinds.Where(r => r.Action == "v_roll").Select(r => r.Input));
+    }
+
+    [Fact]
+    public void Verify_lists_what_the_file_on_disk_lacks()
+    {
+        var path = Tmp("actionmaps.xml");
+        var p = new ControllerProfile { Name = "Flight" };
+        p.Binds.Add(new ScBind { Map = "spaceship_movement", Action = "v_pitch", Input = "y" });
+        var stick = new StickRecord { Name = "Right", Vid = 0x231D, Pid = 0x0200, ProductName = "VKBsim Gladiator NXT R", ScInstance = 4, ProfileId = p.Id };
+        var res = Deployer.Apply(path, Path.Combine(Path.GetDirectoryName(path)!, "bk"), new[] { stick }, new[] { p },
+            Array.Empty<string>());
+        Assert.Empty(Deployer.Verify(res.Result!, path));
+
+        // The game rewrites the file and drops the bind.
+        File.WriteAllText(path, "<ActionMaps><ActionProfiles version=\"1\" optionsVersion=\"2\" rebindVersion=\"2\" profileName=\"default\"/></ActionMaps>");
+        Assert.Equal(new[] { "spaceship_movement/v_pitch js4_y" }, Deployer.Verify(res.Result!, path));
+    }
+
+    [Fact]
     public void Import_keeps_the_keyboard_modifier()
     {
         var path = Tmp("actionmaps.xml");

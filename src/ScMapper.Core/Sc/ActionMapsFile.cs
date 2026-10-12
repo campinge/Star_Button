@@ -39,8 +39,21 @@ public sealed class ActionMapsFile
 
     private ActionMapsFile(XDocument doc, string? path) { Doc = doc; Path = path; }
 
-    public static ActionMapsFile Load(string path) =>
-        new(XDocument.Load(path, LoadOptions.PreserveWhitespace), path);
+    /// <summary>The file started with a UTF-8 byte order mark; written back the same way.</summary>
+    private bool _bom;
+
+    public static ActionMapsFile Load(string path)
+    {
+        var file = new ActionMapsFile(XDocument.Load(path, LoadOptions.PreserveWhitespace), path);
+        try
+        {
+            using var fs = File.OpenRead(path);
+            var head = new byte[3];
+            file._bom = fs.Read(head, 0, 3) == 3 && head[0] == 0xEF && head[1] == 0xBB && head[2] == 0xBF;
+        }
+        catch { /* the document is loaded; the byte order mark is cosmetic */ }
+        return file;
+    }
 
     public static ActionMapsFile LoadOrEmpty(string path) =>
         File.Exists(path) ? Load(path) : CreateEmpty();
@@ -57,12 +70,15 @@ public sealed class ActionMapsFile
 
     public static ActionMapsFile Parse(string xml) => new(XDocument.Parse(xml, LoadOptions.PreserveWhitespace), null);
 
-    private XElement Profile => Doc.Root!.Element("ActionProfiles")
+    private XElement Profile => ProfileOrNull
                                 ?? throw new InvalidDataException("actionmaps.xml has no <ActionProfiles>");
+
+    /// <summary>Reads treat a file without the profile node as "holds nothing"; only writes insist on it.</summary>
+    private XElement? ProfileOrNull => Doc.Root?.Element("ActionProfiles");
 
     public IEnumerable<SeenRebind> Rebinds()
     {
-        foreach (var am in Profile.Elements("actionmap"))
+        foreach (var am in ProfileOrNull?.Elements("actionmap") ?? Enumerable.Empty<XElement>())
             foreach (var a in am.Elements("action"))
                 foreach (var r in a.Elements("rebind"))
                     yield return new SeenRebind((string?)am.Attribute("name") ?? "", (string?)a.Attribute("name") ?? "",
@@ -71,7 +87,7 @@ public sealed class ActionMapsFile
     }
 
     public IEnumerable<(int Instance, string? Product)> JoystickOptions() =>
-        Profile.Elements("options").Where(o => (string?)o.Attribute("type") == "joystick")
+        (ProfileOrNull?.Elements("options") ?? Enumerable.Empty<XElement>()).Where(o => (string?)o.Attribute("type") == "joystick")
             .Select(o => (int.TryParse((string?)o.Attribute("instance"), out var i) ? i : 0, (string?)o.Attribute("Product")));
 
     /// <summary>"Name  {PPPPVVVV-0000-0000-0000-504944564944}"</summary>
@@ -102,10 +118,6 @@ public sealed class ActionMapsFile
         if (last != null) last.AddAfterSelf(el);
         else Profile.AddFirst(el);
     }
-
-    /// <summary>Removes every rebind of the given actions that targets a joystick (jsN_...).</summary>
-    public int RemoveJoystickRebinds(IEnumerable<string> actionKeys) =>
-        RemoveRebinds(actionKeys, input => ActionCatalog.JsInput.IsMatch(input));
 
     /// <summary>Removes the rebinds of the given actions whose input matches the predicate (unbound markers stay).</summary>
     public int RemoveRebinds(IEnumerable<string> actionKeys, Func<string, bool> inputMatches, bool includeUnboundMarkers = false)
@@ -156,7 +168,16 @@ public sealed class ActionMapsFile
     {
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
         var tmp = path + ".tmp";
-        Doc.Save(tmp, SaveOptions.None);
+        // Same shape as the file that was read: the game writes no declaration unless the file had one.
+        var settings = new System.Xml.XmlWriterSettings
+        {
+            Encoding = new System.Text.UTF8Encoding(_bom),
+            OmitXmlDeclaration = Doc.Declaration == null,
+            Indent = false,
+            NewLineHandling = System.Xml.NewLineHandling.None,
+        };
+        using (var w = System.Xml.XmlWriter.Create(tmp, settings))
+            Doc.Save(w);
         File.Move(tmp, path, overwrite: true);
     }
 }

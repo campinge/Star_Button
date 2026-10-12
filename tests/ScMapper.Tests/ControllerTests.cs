@@ -27,6 +27,18 @@ internal sealed class FakeOutput : IKeyOutput
     public void Down(IReadOnlyList<KeyStroke> k) { lock (_l) Log.Add("down:" + string.Join("+", k.Select(x => x.Scan.ToString("X")))); }
     public void Up(IReadOnlyList<KeyStroke> k) { lock (_l) Log.Add("up:" + string.Join("+", k.Select(x => x.Scan.ToString("X")))); }
     public string[] Snapshot() { lock (_l) return Log.ToArray(); }
+
+    /// <summary>Scan codes that went down and were not released since.</summary>
+    public string[] Held()
+    {
+        var down = new HashSet<string>();
+        foreach (var e in Snapshot())
+        {
+            var set = e[(e.IndexOf(':') + 1)..].Split('+', StringSplitOptions.RemoveEmptyEntries);
+            if (e.StartsWith("down:")) down.UnionWith(set); else down.ExceptWith(set);
+        }
+        return down.ToArray();
+    }
 }
 
 public class ControllerTests

@@ -31,8 +31,8 @@ public sealed record ProfileFit(FitLevel Level, IReadOnlyList<string> Missing, P
 
 public static class ProfileFitCheck
 {
-    private static readonly Regex Button = new(@"^button(\d+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex Hat = new(@"^hat(\d+)(_.+)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex Button = new(@"^button(\d{1,6})$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex Hat = new(@"^hat(\d{1,6})(_.+)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>Every physical input the profile does something with ("button5", "lshift+hat1_up", "x").</summary>
     public static IReadOnlyList<string> UsedInputs(ControllerProfile p) =>

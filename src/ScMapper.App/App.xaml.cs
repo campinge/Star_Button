@@ -18,10 +18,23 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // Nothing may take the app down silently: a crash with a key held leaves that key down in Windows.
+        DispatcherUnhandledException += (_, ex) =>
+        {
+            ex.Handled = true;
+            OnFault("UI", ex.Exception);
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, ex) => OnFault("background thread", ex.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, ex) =>
+        {
+            ex.SetObserved();
+            OnFault("task", ex.Exception);
+        };
         // A custom --data folder (tests, screenshots) gets its own instance lock.
         int dataIdx = e.Args.ToList().IndexOf("--data");
         var lockName = dataIdx >= 0 && dataIdx + 1 < e.Args.Length
-            ? "StarButton.SingleInstance." + Math.Abs(e.Args[dataIdx + 1].ToLowerInvariant().GetHashCode())
+            ? "StarButton.SingleInstance." + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(e.Args[dataIdx + 1]).ToLowerInvariant())))[..16]
             : "StarButton.SingleInstance";
         _single = new Mutex(true, lockName, out bool first);
         if (!first)
@@ -66,6 +79,30 @@ public partial class App : Application
         else if (_controller.UnassignedDevices.Count > 0) Announce(_controller.UnassignedDevices.Count);
     }
 
+    private DateTime _lastFaultNotice;
+
+    /// <summary>Logs the fault, lets go of every key the app holds and tells the user once in a while.</summary>
+    private void OnFault(string where, Exception? ex)
+    {
+        try { _controller?.Engine.ReleaseAll(); } catch { }
+        try
+        {
+            var dir = _controller?.Store.Dir ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            File.AppendAllText(Path.Combine(dir, "error.log"),
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{where}] {ex}\r\n\r\n");
+        }
+        catch { }
+        if (DateTime.UtcNow - _lastFaultNotice < TimeSpan.FromMinutes(1)) return;
+        _lastFaultNotice = DateTime.UtcNow;
+        try
+        {
+            _tray?.ShowBalloonTip(6000, "Star Button hit a problem",
+                (ex?.Message ?? "Unknown error") + " - details are in error.log next to your settings.",
+                System.Windows.Forms.ToolTipIcon.Warning);
+        }
+        catch { }
+    }
+
     /// <summary>A joystick appeared while running: never a dialog over the game, only a notice and the badge.</summary>
     private void OnNewDevice(ScMapper.Core.Model.DeviceInfo d)
     {
@@ -106,6 +143,12 @@ public partial class App : Application
 
     internal static Icon MakeIcon()
     {
+        try
+        {
+            if (Environment.ProcessPath is { } exe && Icon.ExtractAssociatedIcon(exe) is { } own)
+                return own;
+        }
+        catch { /* fall back to the drawn icon */ }
         using var bmp = new Bitmap(32, 32);
         using (var g = Graphics.FromImage(bmp))
         {
@@ -143,6 +186,8 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        // Every way out (logoff, shutdown, Quit) lets go of held keys; Dispose is safe to call twice.
+        try { _controller?.Dispose(); } catch { }
         _tray?.Dispose();
         try { _single?.ReleaseMutex(); } catch { }
         base.OnExit(e);

@@ -23,6 +23,7 @@
     <RootNamespace>ScMapper.App</RootNamespace>
     <AssemblyName>StarButton</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\StarButton.ico</ApplicationIcon>
     <NoWarn>CA1416;NETSDK1206</NoWarn>
   </PropertyGroup>
 

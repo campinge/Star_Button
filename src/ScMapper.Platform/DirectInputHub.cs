@@ -93,16 +93,22 @@ public sealed class DirectInputHub : IDeviceHub
                         if (slot >= 0 && !slots.Contains(slot)) slots.Add(slot);
                     }
                     slots.Sort();
+                    // Button instance numbers can be sparse (e.g. a hat push exposed as a high-numbered button),
+                    // so size by the highest instance index, not by the reported count.
+                    int buttonCount = caps.ButtonCount;
+                    foreach (var obj in dev.GetObjects(DeviceObjectTypeFlags.Button))
+                        buttonCount = Math.Max(buttonCount, obj.ObjectId.InstanceNumber + 1);
+                    buttonCount = Math.Min(buttonCount, 128);
                     dev.Acquire();
                     var (vid, pid) = VidPid(inst.ProductGuid);
                     string? path = null;
                     try { path = dev.Properties.InterfacePath; } catch { }
                     var info = new DeviceInfo(inst.InstanceGuid, inst.ProductName, inst.InstanceName, vid, pid, path,
-                        caps.ButtonCount, slots.Count, caps.PovCount, idx) { AxisSlots = slots };
+                        buttonCount, slots.Count, caps.PovCount, idx) { AxisSlots = slots };
                     _open[inst.InstanceGuid] = new Opened
                     {
                         Device = dev, Info = info,
-                        Buttons = new bool[caps.ButtonCount],
+                        Buttons = new bool[buttonCount],
                         Axes = new double[slots.Count],
                         Hats = Enumerable.Repeat(-1, caps.PovCount).ToArray(),
                         HatDirs = new bool[caps.PovCount * 4],
@@ -189,7 +195,12 @@ public sealed class DirectInputHub : IDeviceHub
                 }
             }
         }
-        foreach (var e in events) InputChanged?.Invoke(e);
+        // One failing subscriber must not swallow the other edges of this poll (a lost release is a stuck key).
+        foreach (var e in events)
+        {
+            try { InputChanged?.Invoke(e); }
+            catch { }
+        }
     }
 
     public void Dispose()

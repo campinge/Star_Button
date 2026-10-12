@@ -31,6 +31,12 @@ public partial class SticksView : UserControl
         InitializeComponent();
         ButtonsGrid.ButtonClicked += n => { _selectedInput = $"button{n}"; ShowInspector(); };
         _timer.Tick += (_, _) => Tick();
+        // The live view is only needed while it is on screen (not on another page, not hidden in the tray).
+        IsVisibleChanged += (_, _) =>
+        {
+            if (_c == null) return;
+            if (IsVisible) _timer.Start(); else _timer.Stop();
+        };
     }
 
     public void SelectInput(string input)
@@ -57,7 +63,7 @@ public partial class SticksView : UserControl
         c.Changed += () => Dispatcher.BeginInvoke(Rebuild);
         c.InputSeen += OnInputSeen;
         Rebuild();
-        _timer.Start();
+        if (IsVisible) _timer.Start();
     }
 
     private static Brush B(string key) => (Brush)Application.Current.FindResource(key);

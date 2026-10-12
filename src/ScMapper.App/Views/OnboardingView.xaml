@@ -6,50 +6,7 @@
     <!-- Full-window start screen, shown while there is no profile at all. Nothing behind it can be reached until
          it is left. It only explains how the app works; the profiles are made for the sticks when it is left. -->
     <Grid>
-        <Grid.Background>
-            <RadialGradientBrush Center="0.5,0" GradientOrigin="0.5,0" RadiusX="0.9" RadiusY="0.8">
-                <GradientStop Color="#0E2A3C" Offset="0" />
-                <GradientStop Color="#060A0F" Offset="1" />
-            </RadialGradientBrush>
-        </Grid.Background>
-        <!-- faint grid, like a navigation display -->
-        <Rectangle IsHitTestVisible="False" Opacity="0.55">
-            <Rectangle.Fill>
-                <DrawingBrush TileMode="Tile" Viewport="0,0,56,56" ViewportUnits="Absolute"
-                              Viewbox="0,0,56,56" ViewboxUnits="Absolute">
-                    <DrawingBrush.Drawing>
-                        <GeometryDrawing Geometry="M0,0 L56,0 M0,0 L0,56">
-                            <GeometryDrawing.Pen>
-                                <Pen Brush="#10283A" Thickness="1" />
-                            </GeometryDrawing.Pen>
-                        </GeometryDrawing>
-                    </DrawingBrush.Drawing>
-                </DrawingBrush>
-            </Rectangle.Fill>
-        </Rectangle>
-        <!-- one slow scan line -->
-        <Rectangle Height="2" VerticalAlignment="Top" IsHitTestVisible="False" Opacity="0.35">
-            <Rectangle.Fill>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                    <GradientStop Color="#004FD6FF" Offset="0" />
-                    <GradientStop Color="#FF4FD6FF" Offset="0.5" />
-                    <GradientStop Color="#004FD6FF" Offset="1" />
-                </LinearGradientBrush>
-            </Rectangle.Fill>
-            <Rectangle.RenderTransform>
-                <TranslateTransform x:Name="Scan" />
-            </Rectangle.RenderTransform>
-            <Rectangle.Triggers>
-                <EventTrigger RoutedEvent="FrameworkElement.Loaded">
-                    <BeginStoryboard>
-                        <Storyboard RepeatBehavior="Forever">
-                            <DoubleAnimation Storyboard.TargetName="Scan" Storyboard.TargetProperty="Y"
-                                             From="-10" To="1200" Duration="0:0:11" />
-                        </Storyboard>
-                    </BeginStoryboard>
-                </EventTrigger>
-            </Rectangle.Triggers>
-        </Rectangle>
+        <c:Backdrop />
 
         <Grid x:Name="ExplainPanel">
             <Grid.RowDefinitions>
@@ -67,16 +24,13 @@
                     </StackPanel>
                     <TextBlock Style="{StaticResource H2}" FontFamily="{StaticResource MonoFont}" Margin="0,40,0,0"
                                Foreground="{DynamicResource AccentBrush}" Text="//  WELCOME, PILOT" />
-                    <TextBlock FontSize="34" FontWeight="SemiBold" Margin="0,6,0,0" Text="How Star Button works">
-                        <TextBlock.Effect>
-                            <DropShadowEffect Color="#4FD6FF" BlurRadius="22" ShadowDepth="0" Opacity="0.35" />
-                        </TextBlock.Effect>
-                    </TextBlock>
+                    <TextBlock FontSize="34" FontWeight="SemiBold" Margin="0,6,0,0" Text="How Star Button works"
+                               Effect="{DynamicResource AccentGlowSoft}" />
                     <Rectangle Height="2" Margin="0,14,0,0" HorizontalAlignment="Left" Width="260">
                         <Rectangle.Fill>
                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                <GradientStop Color="#FF4FD6FF" Offset="0" />
-                                <GradientStop Color="#004FD6FF" Offset="1" />
+                                <GradientStop Color="{DynamicResource AccentColor}" Offset="0" />
+                                <GradientStop Color="#00000000" Offset="1" />
                             </LinearGradientBrush>
                         </Rectangle.Fill>
                     </Rectangle>

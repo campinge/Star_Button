@@ -184,10 +184,16 @@ public partial class BindingsView : UserControl
         InitializeComponent();
         ModeList.ItemsSource = ModeOptions;
         _litTimer.Tick += (_, _) => ApplyLighting();
-        _litTimer.Start();
         _statusTimer.Tick += (_, _) => UpdateSyncStatus();
         _statusTimer.Start();
-        IsVisibleChanged += (_, _) => { if (!IsVisible) EndBind(); };
+        IsVisibleChanged += (_, _) =>
+        {
+            if (!IsVisible) EndBind();
+            // Lighting is only seen on this page; the status timer also feeds the "deploy due" dot on the navigation,
+            // so it keeps running, only slower.
+            if (IsVisible) { _litTimer.Start(); _statusTimer.Interval = TimeSpan.FromMilliseconds(500); }
+            else { _litTimer.Stop(); _statusTimer.Interval = TimeSpan.FromSeconds(3); }
+        };
     }
 
     public void Attach(AppController c)
@@ -199,6 +205,7 @@ public partial class BindingsView : UserControl
             if (stick == null && _bindAction == null) return;
             Dispatcher.BeginInvoke(() =>
             {
+                if (stick != null && e.Pressed && _bindAction == null) ShowLive(stick, e.Input);
                 // A button with actions is replaced by them: only the keys it sends exist here, never the button.
                 if (stick != null && c.IsReplaced(stick, e.Input))
                 {
@@ -346,7 +353,7 @@ public partial class BindingsView : UserControl
         }
     }
 
-    [System.Text.RegularExpressions.GeneratedRegex(@"^(kb|mo|gp|js)(\d+)_")]
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(kb|mo|gp|js)(\d{1,4})_")]
     private static partial System.Text.RegularExpressions.Regex DeviceFamily();
 
     private void RebuildTree()
@@ -706,23 +713,24 @@ public partial class BindingsView : UserControl
             ShowJsDrift();
         }
         var n = _pending;
-        if (gameRunning)
-        {
-            _flash = null;
-            SyncStatus.Text = n > 0 ? $"⚠ Star Citizen is running - close it to deploy · {n} pending"
-                                    : "⚠ Star Citizen is running - close it to deploy";
-            SyncStatus.ToolTip = GameRunningHint;
-            SyncStatus.Foreground = (Brush)FindResource(n > 0 ? "BadBrush" : "WarnBrush");
-            return;
-        }
+        // Saving a profile never needs the game closed, so its confirmation shows even while Star Citizen runs.
         if (_flash != null && DateTime.UtcNow < _flashUntil)
         {
-            SyncStatus.Text = _flash;
-            SyncStatus.ToolTip = _flash;
+            SyncStatus.Text = gameRunning ? _flash + " · Star Citizen is running - close it to deploy" : _flash;
+            SyncStatus.ToolTip = gameRunning ? GameRunningHint : _flash;
             SyncStatus.Foreground = (Brush)FindResource("AccentBrush");
             return;
         }
         _flash = null;
+        if (gameRunning)
+        {
+            var lead = dirty ? "✎ Unsaved changes - Save keeps them (no need to close the game) · " : "";
+            SyncStatus.Text = n > 0 ? $"{lead}⚠ Star Citizen is running - close it to deploy · {n} pending"
+                                    : $"{lead}⚠ Star Citizen is running - close it to deploy";
+            SyncStatus.ToolTip = GameRunningHint;
+            SyncStatus.Foreground = (Brush)FindResource(n > 0 ? "BadBrush" : "WarnBrush");
+            return;
+        }
         if (dirty)
         {
             SyncStatus.Text = _c.ActiveSetup.IsProtected
@@ -795,13 +803,13 @@ public partial class BindingsView : UserControl
         {
             DeployBtn.Background = new SolidColorBrush(Color.FromRgb(0x5A, 0x1E, 0x1E));
             DeployBtn.BorderBrush = (Brush)FindResource("BadBrush");
-            DeployBtn.Content = "⚠ Deploy";
+            DeployBtn.Content = "⚠ Deploy to SC";
         }
         else
         {
             DeployBtn.ClearValue(BackgroundProperty);
             DeployBtn.ClearValue(BorderBrushProperty);
-            DeployBtn.Content = "⇪ Deploy";
+            DeployBtn.Content = "⇪ Deploy to SC";
         }
         if (on != _alarm) { _alarm = on; DeployDueChanged?.Invoke(on); }
     }
@@ -860,7 +868,12 @@ public partial class BindingsView : UserControl
         if (_c == null) return false;
         if (!_c.ActiveSetup.IsProtected)
         {
-            _c.SaveActiveSetup();
+            try { _c.SaveActiveSetup(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Controls.Msg.Show("Could not save the profile: " + ex.Message, "Save", MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
+            }
             Flash($"Saved “{_c.ActiveSetup.Name}”");
             return true;
         }
@@ -958,12 +971,18 @@ public partial class BindingsView : UserControl
     private void SetupExport_Click(object s, RoutedEventArgs e)
     {
         if (_c == null) return;
+        var safeName = string.Concat(_c.ActiveSetup.Name.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
         var dlg = new Microsoft.Win32.SaveFileDialog
         {
-            FileName = _c.ActiveSetup.Name + ".starbutton-profile.json",
+            FileName = safeName + ".starbutton-profile.json",
             Filter = "Star Button profile (*.json)|*.json",
         };
-        if (dlg.ShowDialog() == true) File.WriteAllText(dlg.FileName, _c.ExportSetup(_c.ActiveSetup));
+        if (dlg.ShowDialog() != true) return;
+        try { File.WriteAllText(dlg.FileName, _c.ExportSetup(_c.ActiveSetup)); }
+        catch (Exception ex)
+        {
+            Controls.Msg.Show("Could not save the profile: " + ex.Message, "Export", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private void SetupImport_Click(object s, RoutedEventArgs e)
@@ -974,6 +993,12 @@ public partial class BindingsView : UserControl
         try
         {
             _c.ActivateSetup(_c.ImportSetup(File.ReadAllText(dlg.FileName)));
+            var blocked = _c.BlockedCombos();
+            if (blocked.Count > 0)
+                Controls.Msg.Show("This profile contains key combinations that Star Button never sends from a button " +
+                                  "(they could close or switch windows):\n\n    " + string.Join(", ", blocked) +
+                                  "\n\nThose buttons will do nothing until you choose other keys.",
+                    "Import", MessageBoxButton.OK, MessageBoxImage.Warning);
             CheckConflicts();
         }
         catch (Exception ex)
@@ -1022,7 +1047,7 @@ public partial class BindingsView : UserControl
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        if (ScLocator.IsGameRunning())
+        if (ScLocator.IsGameRunning(fresh: true))
         {
             Controls.Msg.Show(GameRunningHint + "\n\nClose Star Citizen, then deploy again.", "Deploy",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -1040,8 +1065,10 @@ public partial class BindingsView : UserControl
                     : $"{x.Replacement} on {_c.StickLabel(x.Stick)} · {Controls.InputNames.Pretty(x.Input)} has no key"))
                 .ToList();
             if (!Controls.DeployPreviewDialog.Confirm(OwnerWindow, _c, changes, warnings)) return;
-            var res = _c.Deploy(false);
-            Flash($"Deployed {res.Added} bindings ✓" + (res.BackupPath != null ? $" · backup {Path.GetFileName(res.BackupPath)}" : ""));
+            // The progress screen runs the deploy itself and reports success or failure.
+            var res = Controls.DeployProgressDialog.Run(_c);
+            if (res != null)
+                Flash($"Deployed {res.Added} bindings ✓" + (res.BackupPath != null ? $" · backup {Path.GetFileName(res.BackupPath)}" : ""));
         }
         catch (Exception ex)
         {
@@ -1103,6 +1130,69 @@ public partial class BindingsView : UserControl
         UpdatePanel();
     }
 
+    // ---- live readout: what the button pressed last triggers -----------------------------------------
+
+    private void ShowLive(StickRecord stick, string input)
+    {
+        if (_c == null) return;
+        // Pressing a button switches the bar from the chip's details to the readout.
+        _selId = null;
+        UpdatePanel();
+
+        var cat = _c.Catalog;
+        string Label(string map, string action) => cat?.Find(map, action)?.Label ?? action;
+        var items = new List<(string Text, string? Key)>();
+        var seen = new HashSet<string>();
+
+        foreach (var t in _actionTags.Values.SelectMany(l => l))
+        {
+            if (t.StickId != stick.Id || t.Input == null || t.IsInactive) continue;
+            var (need, inp) = ScInputCodes.SplitJsInput(t.Input);
+            if (!string.Equals(inp, input, StringComparison.OrdinalIgnoreCase)) continue;
+            var text = Label(t.Map, t.Action)
+                       + (need.Any() ? $"  ·  with {string.Join("+", need)}" : "")
+                       + (t.ModeLabel.Length > 0 ? $"  ·  {t.ModeLabel}" : "")
+                       + (t.IsDefault ? "  ·  game default" : "");
+            if (seen.Add(text)) items.Add((text, $"{t.Map}/{t.Action}"));
+        }
+        if (_c.Store.Profile(stick.ProfileId) is { } p)
+            foreach (var a in p.Actions.Where(a => string.Equals(a.Input, input, StringComparison.OrdinalIgnoreCase)))
+            {
+                var when = a.Trigger switch
+                {
+                    ButtonTrigger.Released => "on release", ButtonTrigger.Held => "while held",
+                    ButtonTrigger.LongPress => "long press", ButtonTrigger.DoublePress => "double press", _ => "on press",
+                };
+                var what = a.Map != null && a.Action != null ? Label(a.Map, a.Action)
+                    : a.Keys != null && ScInputCodes.IsKeyModifier(a.Keys) ? $"holds {a.Keys}"
+                    : $"sends {a.Keys}";
+                var text = $"{what}  ·  {when.ToUpperInvariant()}  ·  via Star Button";
+                if (seen.Add(text)) items.Add((text, a.Map != null && a.Action != null ? $"{a.Map}/{a.Action}" : null));
+            }
+
+        LiveInput.Text = $"{_c.StickLabel(stick)} · {Controls.InputNames.Pretty(input)}";
+        LiveItems.Children.Clear();
+        if (items.Count == 0)
+        {
+            LiveHint.Text = "Nothing is bound to this button.";
+            LiveHint.Visibility = Visibility.Visible;
+            LiveScroll.Visibility = Visibility.Collapsed;
+            return;
+        }
+        foreach (var (text, key) in items)
+        {
+            var b = new Button
+            {
+                Content = text, Padding = new Thickness(9, 3, 9, 3), Margin = new Thickness(0, 0, 6, 4),
+                Tag = key, IsEnabled = key != null, ToolTip = key == null ? null : "Show this action in the list",
+            };
+            b.Click += (_, _) => { if (b.Tag is string k) SelectAction(k); };
+            LiveItems.Children.Add(b);
+        }
+        LiveHint.Visibility = Visibility.Collapsed;
+        LiveScroll.Visibility = Visibility.Visible;
+    }
+
     private void PanelClose_Click(object s, RoutedEventArgs e)
     {
         _selId = null;
@@ -1116,10 +1206,12 @@ public partial class BindingsView : UserControl
         if (tag == null)
         {
             _selId = null;
-            Panel.Visibility = Visibility.Collapsed;
+            PanelBody.Visibility = Visibility.Collapsed;
+            PanelEmpty.Visibility = Visibility.Visible;
             return;
         }
-        Panel.Visibility = Visibility.Visible;
+        PanelBody.Visibility = Visibility.Visible;
+        PanelEmpty.Visibility = Visibility.Collapsed;
         var def = _c?.Catalog?.Find(tag.Map, tag.Action);
         PanelAction.Text = def?.Label ?? tag.Action;
         PanelPath.Text = _c?.Catalog?.PathOf(tag.Map, tag.Action) ?? tag.Map;
@@ -1130,11 +1222,12 @@ public partial class BindingsView : UserControl
         ModeList.SelectedItem = ModeOptions.FirstOrDefault(m => m.Value == tag.Mode) ?? ModeOptions[0];
         _loading = false;
         ModeList.IsEnabled = !tag.IsAxis;
-        PanelModeNote.Text = tag.IsAxis
+        var note = tag.IsAxis
             ? "Axes are always continuous - they have no trigger mode."
             : def?.ActivationMode is { } dm && tag.Mode == null
                 ? $"Game default for this action: {dm.Replace('_', ' ')}."
                 : "Written to Star Citizen when you deploy. Only “Default” is thoroughly tested - check others in the game.";
+        ModeList.ToolTip = (tag.IsAxis || ModeList.SelectedItem is not ModeOption mo ? "" : mo.Description + "\n") + note;
     }
 
     private void ModeList_SelectionChanged(object s, SelectionChangedEventArgs e)

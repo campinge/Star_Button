@@ -277,6 +277,27 @@ public sealed partial class AppController
         return true;
     }
 
+    /// <summary>
+    /// Key combos in the active profile's stick layouts that the app will refuse to send (Alt+F4 and the like).
+    /// Used to tell the user after an import, so a shared profile never fails silently.
+    /// </summary>
+    public IReadOnlyList<string> BlockedCombos()
+    {
+        var found = new List<string>();
+        lock (_gate)
+            foreach (var layoutId in ActiveSetup.StickLayouts.Values.Distinct())
+            {
+                var p = Store.Profile(layoutId);
+                if (p == null) continue;
+                foreach (var a in p.Actions)
+                {
+                    var combo = a.Keys ?? (a.Map != null && a.Action != null ? KeyFor(a.Map, a.Action).Combo : null);
+                    if (combo != null && KeyPlanner.DangerReason(combo) != null && !found.Contains(combo)) found.Add(combo);
+                }
+            }
+        return found;
+    }
+
     /// <summary>Other game actions (map/action) that use the same key combo as <paramref name="combo"/>.</summary>
     public IReadOnlyList<string> KeyConflicts(string map, string action, string combo)
     {

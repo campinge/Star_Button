@@ -99,6 +99,7 @@ public partial class MainWindow : Window
         if (SticksPage == null) return;
         SticksPage.Visibility = NavSticks.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         BindingsPage.Visibility = NavBindings.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        AntiAfkPage.Visibility = NavAntiAfk.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         SettingsPage.Visibility = NavSettings.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -111,7 +112,7 @@ public partial class MainWindow : Window
 
     public void ShowPage(string name)
     {
-        (name switch { "bindings" => NavBindings, "settings" => NavSettings, _ => NavSticks }).IsChecked = true;
+        (name switch { "bindings" => NavBindings, "settings" => NavSettings, "antiafk" => NavAntiAfk, _ => NavSticks }).IsChecked = true;
     }
 
     protected override void OnClosing(CancelEventArgs e)

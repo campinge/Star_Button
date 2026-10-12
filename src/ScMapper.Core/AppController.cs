@@ -40,6 +40,7 @@ public sealed partial class AppController : IDisposable
 
     private bool _announceNew;
     private readonly HashSet<Guid> _announced = new();
+    private HashSet<Guid> _presentDevices = new();
 
     public AppController(AppStore store, IDeviceHub hub, IKeyOutput output)
     {
@@ -204,8 +205,12 @@ public sealed partial class AppController : IDisposable
         static bool Holds(ControllerProfile? p) => p != null && (p.Binds.Count > 0 || p.Rules.Count > 0 || p.Actions.Count > 0);
         if (s.SavedState != null)
         {
-            var snap = System.Text.Json.JsonSerializer.Deserialize<Snapshot>(s.SavedState);
-            return snap != null && (Holds(snap.Keyboard) || Holds(snap.Gamepad) || snap.Layouts.Any(l => Holds(l.Layout)));
+            try
+            {
+                var snap = System.Text.Json.JsonSerializer.Deserialize<Snapshot>(s.SavedState);
+                return snap != null && (Holds(snap.Keyboard) || Holds(snap.Gamepad) || snap.Layouts.Any(l => Holds(l.Layout)));
+            }
+            catch (System.Text.Json.JsonException) { return false; }
         }
         return Holds(s.Keyboard) || Holds(s.Gamepad) || s.StickLayouts.Values.Any(id => Holds(Store.Profile(id)));
     }
@@ -225,9 +230,17 @@ public sealed partial class AppController : IDisposable
             if (s.ProfileId is { } g) a.StickLayouts[s.Id] = g;
             else a.StickLayouts.Remove(s.Id);
         }
+        PruneResidue();
         // Keys of records that are gone (a slot that took a device, a forgotten stick) would show a profile twice.
         var ids = Store.Data.Sticks.Select(s => s.Id).ToHashSet();
         foreach (var k in a.StickLayouts.Keys.Where(k => !ids.Contains(k)).ToList()) a.StickLayouts.Remove(k);
+    }
+
+    /// <summary>A record that never saw a device, holds no profile and is in no setup is residue.</summary>
+    private void PruneResidue()
+    {
+        var referenced = Store.Data.Setups.SelectMany(x => x.StickLayouts.Keys).ToHashSet();
+        Store.Data.Sticks.RemoveAll(s => IsSlot(s) && s.ProfileId == null && !referenced.Contains(s.Id));
     }
 
     public void ActivateSetup(Setup setup)
@@ -256,6 +269,7 @@ public sealed partial class AppController : IDisposable
                 }
                 else s.ProfileId = null;
             }
+            PruneResidue();
             Store.Save();
         }
         Changed?.Invoke();
@@ -345,7 +359,9 @@ public sealed partial class AppController : IDisposable
     public void RevertSetup(Setup s)
     {
         if (s.SavedState == null) return;
-        var snap = System.Text.Json.JsonSerializer.Deserialize<Snapshot>(s.SavedState);
+        Snapshot? snap;
+        try { snap = System.Text.Json.JsonSerializer.Deserialize<Snapshot>(s.SavedState); }
+        catch (System.Text.Json.JsonException) { return; }
         if (snap == null) return;
         lock (_gate)
         {
@@ -421,6 +437,7 @@ public sealed partial class AppController : IDisposable
                 var layout = Store.Profile(layoutId);
                 if (layout == null) continue;
                 var c = CloneLayout(layout);
+                c.Name = layout.Name;   // the same profile in another setup keeps its name
                 Store.Data.Profiles.Add(c);
                 s.StickLayouts[stickId] = c.Id;
             }
@@ -442,19 +459,24 @@ public sealed partial class AppController : IDisposable
     /// <summary>Deletes a setup and the stick layouts nobody else uses. The last setup cannot be deleted.</summary>
     public bool DeleteSetup(Setup s)
     {
+        bool wasActive;
         lock (_gate)
         {
             _ = ActiveSetup;
             if (s.IsProtected || Store.Data.Setups.Count <= 1) return false;
-            bool wasActive = ReferenceEquals(_active, s);
+            wasActive = ReferenceEquals(_active, s);
+            // The sticks' live layouts belong to the setup being deleted: take them over into it first, so the
+            // switch below does not write layouts that are about to disappear into the setup that takes over.
+            if (wasActive) SyncActiveFromSticks();
             Store.Data.Setups.Remove(s);
             var used = Store.Data.Setups.SelectMany(x => x.StickLayouts.Values).ToHashSet();
             foreach (var l in s.StickLayouts.Values.Where(l => !used.Contains(l)).ToList())
                 Store.Data.Profiles.RemoveAll(p => p.Id == l);
-            if (wasActive) { _active = null; Store.Data.ActiveSetupId = Store.Data.Setups[0].Id; }
+            if (wasActive) Store.Data.ActiveSetupId = Store.Data.Setups[0].Id;
             Store.Save();
         }
-        if (_active == null) ActivateSetup(Store.Data.Setups[0]);
+        // _active still points at the deleted setup, so ActivateSetup syncs into that one and not into the target.
+        if (wasActive) ActivateSetup(Store.Data.Setups[0]);
         else Changed?.Invoke();
         return true;
     }
@@ -506,38 +528,6 @@ public sealed partial class AppController : IDisposable
     }
 
     /// <summary>
-    /// Reads a Star Citizen actionmaps.xml into a NEW setup and activates it. Keyboard-output rules are not
-    /// part of Star Citizen, so they are carried over from the previously active setup.
-    /// </summary>
-    public (Setup Setup, int Imported, int Skipped) ReadFromStarCitizen(ActionMapsFile? file = null, string? name = null)
-    {
-        file ??= LoadActionMaps();
-        var rulesByStick = new Dictionary<Guid, (string Name, Dictionary<string, ButtonRule> Rules, List<ButtonAction> Actions)>();
-        lock (_gate)
-        {
-            _ = ActiveSetup;
-            // Every stick that has a profile now keeps one in the new setup (empty apart from its rules), so
-            // reading the game's file has somewhere to put the stick bindings.
-            foreach (var st in Store.Data.Sticks)
-            {
-                var layout = Store.Profile(st.ProfileId);
-                if (layout != null && !layout.IsSystem)
-                    rulesByStick[st.Id] = (layout.Name, Clone(layout.Rules), Clone(layout.Actions));
-            }
-        }
-        var setup = NewSetup(name ?? $"Star Citizen · {DateTime.Now:dd.MM. HH:mm}");
-        foreach (var st in Store.Data.Sticks.ToList())
-        {
-            if (!rulesByStick.TryGetValue(st.Id, out var r)) continue;
-            var layout = NewLayoutFor(st, r.Name);
-            layout.Rules = r.Rules;
-            layout.Actions = r.Actions;
-        }
-        var (imported, skipped) = file == null ? (0, 0) : ImportFromActionMaps(file);
-        return (setup, imported, skipped);
-    }
-
-    /// <summary>
     /// Makes the ACTIVE setup mirror Star Citizen's actionmaps.xml: its bindings are replaced by what the
     /// game's file holds. Keyboard-output rules and split buttons are not part of the game and are kept.
     /// </summary>
@@ -550,7 +540,9 @@ public sealed partial class AppController : IDisposable
             setup = ActiveSetup;
             setup.Keyboard.Binds.Clear();
             setup.Gamepad.Binds.Clear();
-            foreach (var st in Store.Data.Sticks)
+            // An unplugged stick cannot take bindings back from the file (its js number is not its own right now),
+            // so its profile is left alone instead of being emptied.
+            foreach (var st in Store.Data.Sticks.Where(IsConnected))
                 if (Store.Profile(st.ProfileId) is { } layout) layout.Binds.Clear();
         }
         var (imported, skipped) = file == null ? (0, 0) : ImportFromActionMaps(file);
@@ -716,21 +708,44 @@ public sealed partial class AppController : IDisposable
         Changed?.Invoke();
     }
 
-    public async Task LoadCatalogAsync(bool force)
+    private readonly object _catalogLock = new();
+    private Task? _catalogTask;
+    private ScInstall? _catalogFor;
+    private int _catalogGeneration;
+
+    /// <summary>
+    /// Builds or loads the action catalog. A second call for the same installation while one is running joins it
+    /// (several clicks on "Re-read" are one scan); a call for another installation supersedes the running one, whose
+    /// result is dropped when it arrives.
+    /// </summary>
+    public Task LoadCatalogAsync(bool force)
+    {
+        lock (_catalogLock)
+        {
+            if (_catalogTask is { IsCompleted: false } running && Equals(_catalogFor, Install)) return running;
+            _catalogFor = Install;
+            return _catalogTask = Task.Run(() => LoadCatalogCore(force));
+        }
+    }
+
+    private async Task LoadCatalogCore(bool force)
     {
         var inst = Install;
+        int gen = Interlocked.Increment(ref _catalogGeneration);
         if (inst == null) { CatalogStatus = "Star Citizen installation not found"; Changed?.Invoke(); return; }
         CatalogStatus = "Reading game data...";
         Changed?.Invoke();
         try
         {
             var cat = await Task.Run(() => ActionCatalog.LoadOrBuild(inst, Store.CacheDir, force,
-                m => { CatalogStatus = m; Changed?.Invoke(); }));
+                m => { if (gen == _catalogGeneration) { CatalogStatus = m; Changed?.Invoke(); } }));
+            if (gen != _catalogGeneration) return;   // another installation was chosen meanwhile
             Catalog = cat;
             CatalogStatus = $"{cat.AllActions.Count()} actions in {cat.Groups.Count} groups (build {cat.BuildVersion})";
         }
         catch (Exception ex)
         {
+            if (gen != _catalogGeneration) return;
             CatalogStatus = "Failed: " + ex.Message;
         }
         Changed?.Invoke();
@@ -766,9 +781,13 @@ public sealed partial class AppController : IDisposable
     public void Reconcile()
     {
         List<DeviceInfo>? announce = null;
+        List<Guid>? vanished = null;
         lock (_gate)
         {
             var devices = Hub.Devices;
+            var nowPresent = devices.Select(d => d.InstanceGuid).ToHashSet();
+            vanished = _presentDevices.Where(g => !nowPresent.Contains(g)).ToList();
+            _presentDevices = nowPresent;
             var data = Store.Data;
             var m = DeviceMatcher.Match(data.Sticks, devices);
 
@@ -803,6 +822,8 @@ public sealed partial class AppController : IDisposable
                 foreach (var d in m.Unmatched.Where(IsRegistrable))
                     if (_announced.Add(d.InstanceGuid)) (announce ??= new()).Add(d);
         }
+        // A device that is gone cannot report that its buttons were let go: whatever it held goes up now.
+        foreach (var g in vanished) Engine.ReleaseDevice(g);
         Changed?.Invoke();
         if (announce != null)
             foreach (var d in announce) NewDeviceSeen?.Invoke(d);
@@ -1047,33 +1068,6 @@ public sealed partial class AppController : IDisposable
         Reconcile();
     }
 
-    public StickRecord AddStickFor(DeviceInfo device, string? name = null)
-    {
-        StickRecord rec;
-        lock (_gate)
-        {
-            var nm = name ?? device.ProductName.Trim();
-            var model = device.ProductName.Trim();
-            var profile = FreeProfileFor(model);
-            if (profile == null)
-            {
-                profile = new ControllerProfile { Name = UniqueProfileName(model) };
-                Store.Data.Profiles.Add(profile);
-            }
-            rec = new StickRecord { Name = nm, ProfileId = profile.Id };
-            DeviceMatcher.Refresh(rec, device);
-            Store.Data.Sticks.Add(rec);
-        }
-        Reconcile();
-        return rec;
-    }
-
-    public void ForgetStick(StickRecord s)
-    {
-        lock (_gate) Store.Data.Sticks.Remove(s);
-        Reconcile();
-    }
-
     public void Touch()
     {
         lock (_gate)
@@ -1205,76 +1199,6 @@ public sealed partial class AppController : IDisposable
 
     // ---- profiles -----------------------------------------------------------------------------
 
-    public ControllerProfile NewProfile(string? name = null)
-    {
-        var p = new ControllerProfile { Name = UniqueProfileName(name ?? "New profile") };
-        Store.Data.Profiles.Add(p);
-        Touch();
-        return p;
-    }
-
-    public ControllerProfile DuplicateProfile(ControllerProfile src)
-    {
-        var json = AppStore.ExportProfile(src);
-        var p = System.Text.Json.JsonSerializer.Deserialize<ControllerProfile>(json)!;
-        p.Id = Guid.NewGuid();
-        p.Name = UniqueProfileName(src.Name + " copy");
-        Store.Data.Profiles.Add(p);
-        Touch();
-        return p;
-    }
-
-    public void DeleteProfile(ControllerProfile p)
-    {
-        DeleteProfiles(new[] { p });
-    }
-
-    /// <summary>
-    /// Deletes stick layouts everywhere: sticks and setups that used one are left without (a new, empty
-    /// layout is made on demand). Their saved snapshots are dropped so nothing resurrects them.
-    /// </summary>
-    public void DeleteProfiles(IEnumerable<ControllerProfile> profiles)
-    {
-        lock (_gate)
-        {
-            _ = ActiveSetup; SyncActiveFromSticks();
-            var ids = new HashSet<Guid>();
-            foreach (var p in profiles.Where(p => !p.IsSystem)) ids.UnionWith(SiblingLayouts(p.Id));
-            if (ids.Count == 0) return;
-            Store.Data.Profiles.RemoveAll(p => ids.Contains(p.Id));
-            foreach (var id in ids) Store.Data.ProfileDevices.Remove(id);
-            foreach (var s in Store.Data.Sticks.Where(s => s.ProfileId is { } g && ids.Contains(g))) s.ProfileId = null;
-            foreach (var setup in Store.Data.Setups)
-            {
-                foreach (var k in setup.StickLayouts.Where(kv => ids.Contains(kv.Value)).Select(kv => kv.Key).ToList())
-                    setup.StickLayouts.Remove(k);
-                setup.SavedState = null;
-            }
-            // A slot (a profile that never had a device) goes with its profile.
-            Store.Data.Sticks.RemoveAll(s => IsSlot(s) && s.ProfileId == null &&
-                                             !Store.Data.Setups.Any(x => x.StickLayouts.ContainsKey(s.Id)));
-        }
-        Touch();
-    }
-
-    /// <summary>Where a stick layout is in use: "Stick (Setup)" for every setup that assigns it.</summary>
-    public IReadOnlyList<string> ProfileUsage(ControllerProfile p)
-    {
-        lock (_gate)
-        {
-            _ = ActiveSetup;
-            SyncActiveFromSticks();
-            var res = new List<string>();
-            foreach (var setup in Store.Data.Setups)
-                foreach (var kv in setup.StickLayouts.Where(kv => kv.Value == p.Id))
-                {
-                    var st = Store.Data.Sticks.FirstOrDefault(s => s.Id == kv.Key);
-                    res.Add($"{st?.Name ?? "unknown stick"} ({setup.Name})");
-                }
-            return res;
-        }
-    }
-
     public void RenameProfile(ControllerProfile p, string name)
     {
         name = name.Trim();
@@ -1290,18 +1214,6 @@ public sealed partial class AppController : IDisposable
             p.Name = n;
         }
         Touch();
-    }
-
-    public ControllerProfile EnsureProfile(StickRecord s)
-    {
-        var p = Store.Profile(s.ProfileId);
-        if (p != null) return p;
-        var model = s.ProductName.Trim();
-        p = model.Length > 0 ? FreeProfileFor(model) : null;
-        p ??= NewProfile(model.Length > 0 ? model : s.Name);
-        s.ProfileId = p.Id;
-        Touch();
-        return p;
     }
 
     public void SetBind(ControllerProfile p, string map, string action, string input, string? mode = null)
@@ -1401,7 +1313,7 @@ public sealed partial class AppController : IDisposable
     [GeneratedRegex(@"^(button\d+|hat\d+_(up|down|left|right|center)|x|y|z|rotx|roty|rotz|slider[12])$")]
     private static partial Regex InputName();
 
-    [GeneratedRegex(@"^(kb|mo|gp|js)(\d+)_")]
+    [GeneratedRegex(@"^(kb|mo|gp|js)(\d{1,4})_")]
     private static partial Regex DeviceCode();
 
     /// <summary>
@@ -1509,7 +1421,7 @@ public sealed partial class AppController : IDisposable
     public DeployResult Deploy(bool dryRun)
     {
         if (Install == null) throw new InvalidOperationException("No Star Citizen installation selected");
-        if (!dryRun && ScLocator.IsGameRunning()) throw new InvalidOperationException(GameRunningMessage);
+        if (!dryRun && ScLocator.IsGameRunning(fresh: true)) throw new InvalidOperationException(GameRunningMessage);
         var d = Store.Data;
         var res = Deployer.Apply(Install.ActionMapsPath, Store.BackupDir, DeploySticks(), ProfilesForDeploy(),
             d.ManagedKeys, dryRun, new ManagedKeys(d.ManagedKeys, d.ManagedKbmKeys, d.ManagedGamepadKeys),

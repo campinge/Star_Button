@@ -14,27 +14,26 @@ public sealed record ScInstall(string Root, string Channel)
     public string Label => $"{Channel} - {Root}";
     public override string ToString() => Label;
 
+    private static readonly Dictionary<string, (DateTime Stamp, string? Version)> VersionCache = new();
+
+    /// <summary>The build version from build_manifest.id; re-read only when the file changed.</summary>
     public string? ReadVersion()
     {
+        var path = Path.Combine(Dir, "build_manifest.id");
         try
         {
-            using var s = File.OpenRead(Path.Combine(Dir, "build_manifest.id"));
+            var stamp = File.GetLastWriteTimeUtc(path);
+            lock (VersionCache)
+                if (VersionCache.TryGetValue(path, out var hit) && hit.Stamp == stamp) return hit.Version;
+            using var s = File.OpenRead(path);
             using var doc = JsonDocument.Parse(s);
-            return doc.RootElement.GetProperty("Data").GetProperty("Version").GetString();
+            var version = doc.RootElement.GetProperty("Data").GetProperty("Version").GetString();
+            lock (VersionCache) VersionCache[path] = (stamp, version);
+            return version;
         }
         catch { return null; }
     }
 
-    public string? ReadBranch()
-    {
-        try
-        {
-            using var s = File.OpenRead(Path.Combine(Dir, "build_manifest.id"));
-            using var doc = JsonDocument.Parse(s);
-            return doc.RootElement.GetProperty("Data").GetProperty("Branch").GetString();
-        }
-        catch { return null; }
-    }
 }
 
 public static class ScLocator
@@ -102,6 +101,21 @@ public static class ScLocator
         return found.Where(Directory.Exists);
     }
 
-    public static bool IsGameRunning() =>
-        Process.GetProcessesByName("StarCitizen").Length > 0;
+    private static long _checkedAt;
+    private static bool _running;
+
+    /// <summary>
+    /// Whether the game process exists. The UI asks several times a second, so the answer is reused for a second;
+    /// anything that is about to write the game's files asks with <paramref name="fresh"/>.
+    /// </summary>
+    public static bool IsGameRunning(bool fresh = false)
+    {
+        long now = Environment.TickCount64;
+        if (!fresh && now - Interlocked.Read(ref _checkedAt) < 1000) return _running;
+        var procs = Process.GetProcessesByName("StarCitizen");
+        try { _running = procs.Length > 0; }
+        finally { foreach (var p in procs) p.Dispose(); }
+        Interlocked.Exchange(ref _checkedAt, now);
+        return _running;
+    }
 }

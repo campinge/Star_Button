@@ -1,0 +1,52 @@
+<UserControl x:Class="ScMapper.App.Controls.Backdrop"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             IsHitTestVisible="False" Background="{DynamicResource BgBrush}">
+    <!-- Themed decoration behind a whole window or screen: glow from the top, a texture (grid or hatch, set by the
+         theme), a slow scan line and corner brackets. Everything takes its colours from the theme resources. -->
+    <Grid ClipToBounds="True">
+        <Rectangle>
+            <Rectangle.Fill>
+                <RadialGradientBrush Center="0.5,0" GradientOrigin="0.5,0" RadiusX="0.9" RadiusY="0.8">
+                    <GradientStop Color="{DynamicResource GlowColor}" Offset="0" />
+                    <GradientStop Color="{DynamicResource BgColor}" Offset="1" />
+                </RadialGradientBrush>
+            </Rectangle.Fill>
+        </Rectangle>
+        <!-- second, fainter light from the lower right, so the screen is not lit from one side only -->
+        <Rectangle Fill="{DynamicResource AccentBrush}" Opacity="0.07">
+            <Rectangle.OpacityMask>
+                <RadialGradientBrush Center="1,1" GradientOrigin="1,1" RadiusX="0.6" RadiusY="0.7">
+                    <GradientStop Color="#FF000000" Offset="0" />
+                    <GradientStop Color="#00000000" Offset="1" />
+                </RadialGradientBrush>
+            </Rectangle.OpacityMask>
+        </Rectangle>
+        <!-- texture, filled in code (it depends on the theme) -->
+        <Rectangle x:Name="Texture" Opacity="0.6" />
+        <!-- vignette -->
+        <Rectangle>
+            <Rectangle.Fill>
+                <RadialGradientBrush Center="0.5,0.5" RadiusX="0.85" RadiusY="0.85">
+                    <GradientStop Color="#00000000" Offset="0.6" />
+                    <GradientStop Color="#99000000" Offset="1" />
+                </RadialGradientBrush>
+            </Rectangle.Fill>
+        </Rectangle>
+        <!-- one slow scan line -->
+        <Rectangle x:Name="ScanLine" Height="2" VerticalAlignment="Top" Fill="{DynamicResource AccentBrush}" Opacity="0.3">
+            <Rectangle.OpacityMask>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                    <GradientStop Color="#00000000" Offset="0" />
+                    <GradientStop Color="#FF000000" Offset="0.5" />
+                    <GradientStop Color="#00000000" Offset="1" />
+                </LinearGradientBrush>
+            </Rectangle.OpacityMask>
+            <Rectangle.RenderTransform>
+                <TranslateTransform x:Name="Scan" />
+            </Rectangle.RenderTransform>
+        </Rectangle>
+        <!-- corner brackets -->
+        <Canvas x:Name="Brackets" Opacity="0.55" />
+    </Grid>
+</UserControl>

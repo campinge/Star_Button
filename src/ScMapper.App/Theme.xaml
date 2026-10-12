@@ -25,6 +25,19 @@
     <SolidColorBrush x:Key="WarnDimBrush" Color="#2A2210" />
     <SolidColorBrush x:Key="HoverBrush" Color="#12212E" />
     <SolidColorBrush x:Key="ThumbBrush" Color="#2C5570" />
+    <SolidColorBrush x:Key="GlowBrush" Color="#0E2A3C" />
+    <SolidColorBrush x:Key="GridLineBrush" Color="#10283A" />
+
+    <!-- Bare colours for gradients and masks (ThemeManager keeps them in step with the brushes). -->
+    <Color x:Key="BgColor">#060A0F</Color>
+    <Color x:Key="PanelColor">#0B131C</Color>
+    <Color x:Key="AccentColor">#4FD6FF</Color>
+    <Color x:Key="AccentDimColor">#103246</Color>
+    <Color x:Key="AccentDeepColor">#0A2230</Color>
+    <Color x:Key="GlowColor">#0E2A3C</Color>
+    <Color x:Key="GridLineColor">#10283A</Color>
+    <DropShadowEffect x:Key="AccentGlow" Color="#4FD6FF" BlurRadius="18" ShadowDepth="0" Opacity="0.5" />
+    <DropShadowEffect x:Key="AccentGlowSoft" Color="#4FD6FF" BlurRadius="24" ShadowDepth="0" Opacity="0.32" />
 
     <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="CardCut">12</sys:Double>
     <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="ControlCut">6</sys:Double>
@@ -102,6 +115,11 @@
         <Setter Property="Background" Value="{DynamicResource AccentDimBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Effect" Value="{DynamicResource AccentGlow}" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
     <Style x:Key="Danger" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
         <Setter Property="Foreground" Value="{DynamicResource BadBrush}" />
@@ -144,8 +162,17 @@
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
                     <Grid x:Name="b" Background="Transparent" Margin="0,2">
+                        <!-- selected: accent wash fading out to the right, with a glowing bar on the left -->
+                        <Rectangle x:Name="wash" Visibility="Collapsed">
+                            <Rectangle.Fill>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Color="{DynamicResource AccentDimColor}" Offset="0" />
+                                    <GradientStop Color="#00000000" Offset="1" />
+                                </LinearGradientBrush>
+                            </Rectangle.Fill>
+                        </Rectangle>
                         <Border x:Name="bar" Width="3" HorizontalAlignment="Left" Background="{DynamicResource AccentBrush}"
-                                Visibility="Collapsed" Margin="0,5" />
+                                Effect="{DynamicResource AccentGlow}" Visibility="Collapsed" Margin="0,5" />
                         <ContentPresenter Margin="22,11,14,11" VerticalAlignment="Center" />
                     </Grid>
                     <ControlTemplate.Triggers>
@@ -155,6 +182,7 @@
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentDeepBrush}" />
+                            <Setter TargetName="wash" Property="Visibility" Value="Visible" />
                             <Setter TargetName="bar" Property="Visibility" Value="Visible" />
                             <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
                         </Trigger>

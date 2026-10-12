@@ -42,7 +42,18 @@ public static class KeyCombo
 
     private static readonly HashSet<ushort> ModScans = new() { 0x2A, 0x36, 0x1D, 0x38 };
 
-    public static IReadOnlyCollection<string> KnownKeys => Table.Keys;
+    private static readonly Dictionary<(ushort, bool), string> ByScan = BuildReverse();
+
+    private static Dictionary<(ushort, bool), string> BuildReverse()
+    {
+        var r = new Dictionary<(ushort, bool), string>();
+        foreach (var (name, v) in Table) r.TryAdd((v.Scan, v.Ext), name);   // first (canonical) alias wins
+        return r;
+    }
+
+    /// <summary>The key name of a hardware scan code, or null when the app has no name for it.</summary>
+    public static string? NameOfScan(ushort scan, bool extended) =>
+        ByScan.TryGetValue((scan, extended), out var n) ? n : null;
 
     public static bool TryParse(string? combo, out List<KeyStroke> keys, out string? error)
     {
@@ -54,6 +65,7 @@ public static class KeyCombo
             if (!Table.TryGetValue(part, out var v)) { error = $"unknown key '{part}'"; keys.Clear(); return false; }
             keys.Add(new KeyStroke(v.Scan, v.Ext, ModScans.Contains(v.Scan)));
         }
+        if (keys.Count == 0) { error = "empty"; return false; }   // "+" alone is no combo
         // Modifiers go first so "d+lshift" and "lshift+d" behave the same.
         keys = keys.OrderByDescending(k => k.IsModifier).ToList();
         return true;

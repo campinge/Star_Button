@@ -78,14 +78,11 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
 
         <!-- Header, two rows: actions on top, the full status line below. -->
-        <Border Grid.ColumnSpan="2" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}"
+        <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="1" Padding="8,6" Margin="0,0,0,10">
             <StackPanel>
                 <Grid>
@@ -138,8 +135,8 @@
                     <Button x:Name="ReadBtn" Grid.Column="4" Content="⟳ Read SC" Margin="14,0,0,0" Padding="10,5" Click="Read_Click"
                             ToolTip="Replace this profile's bindings with what Star Citizen currently has" />
                     <Grid Grid.Column="5" Margin="6,0,0,0">
-                        <Button x:Name="DeployBtn" Content="⇪ Deploy" Style="{StaticResource Accent}"
-                                Padding="10,5" Click="Deploy_Click" ToolTip="Write this profile to Star Citizen" />
+                        <Button x:Name="DeployBtn" Content="⇪ Deploy to SC" Style="{StaticResource Accent}"
+                                Padding="18,5" MinWidth="130" Click="Deploy_Click" ToolTip="Write this profile to Star Citizen" />
                         <!-- Not part of the button, so it stays fully visible while Deploy is greyed out. -->
                         <Ellipse x:Name="DeployAlarm" Width="12" Height="12" Fill="{DynamicResource BadBrush}"
                                  Stroke="{DynamicResource BgBrush}" StrokeThickness="2" HorizontalAlignment="Right"
@@ -274,42 +271,57 @@
             </ListBox>
         </DockPanel>
 
-        <!-- Right: details of the selected chip. Only there while a chip is selected. -->
-        <c:Card x:Name="Panel" Grid.Row="1" Grid.Column="1" Width="340" Margin="14,0,0,0" Visibility="Collapsed" Padding="16">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel>
-                    <DockPanel>
-                        <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource Flat}" Click="PanelClose_Click"
-                                ToolTip="Close" Padding="6,2" />
-                        <TextBlock Style="{StaticResource H2}" Text="BINDING" VerticalAlignment="Center" />
-                    </DockPanel>
-                    <TextBlock x:Name="PanelAction" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0" />
-                    <TextBlock x:Name="PanelPath" Style="{StaticResource Muted}" FontSize="11.5" TextWrapping="Wrap" Margin="0,3,0,0" />
-
-                    <Border Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="12,10" Margin="0,14,0,0">
-                        <StackPanel>
-                            <TextBlock x:Name="PanelInput" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" />
-                            <TextBlock x:Name="PanelSource" Style="{StaticResource Muted}" FontSize="11.5" TextWrapping="Wrap"
-                                       Margin="0,3,0,0" />
-                        </StackPanel>
-                    </Border>
-
-                    <TextBlock Style="{StaticResource H2}" Text="HOW SHOULD IT TRIGGER?" Margin="0,18,0,6" />
-                    <ComboBox x:Name="ModeList" ItemTemplate="{StaticResource ModeTemplate}" MinHeight="34"
-                              HorizontalAlignment="Stretch" SelectionChanged="ModeList_SelectionChanged" />
-                    <TextBlock Style="{StaticResource Muted}" FontSize="11.5" TextWrapping="Wrap" Margin="0,8,0,0"
-                               Text="{Binding SelectedItem.Description, ElementName=ModeList}" />
-                    <TextBlock x:Name="PanelModeNote" Style="{StaticResource Muted}" FontSize="11.5" TextWrapping="Wrap"
-                               Margin="0,6,0,0" />
-
-                    <StackPanel Margin="0,18,0,0">
-                        <Button Content="Bind a different input…" Click="PanelRebind_Click" HorizontalAlignment="Stretch"
-                                ToolTip="Press the new key or stick button for this action" />
-                        <Button Content="Remove this binding" Style="{StaticResource Danger}" Click="PanelRemove_Click"
-                                HorizontalAlignment="Stretch" Margin="0,8,0,0" />
+        <!-- Bottom bar, fixed height so nothing moves: details of the selected chip, otherwise what the
+             button you pressed last triggers. -->
+        <c:Card x:Name="Panel" Grid.Row="2" Height="84" Margin="0,10,0,0" Padding="14,8">
+            <Grid>
+                <Grid x:Name="PanelEmpty">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" MinWidth="170" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                        <TextBlock Style="{StaticResource H2}" Text="LAST PRESSED" />
+                        <TextBlock x:Name="LiveInput" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                   Margin="0,3,0,0" Text="-" />
                     </StackPanel>
-                </StackPanel>
-            </ScrollViewer>
+                    <TextBlock x:Name="LiveHint" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource Muted}"
+                               FontSize="12" TextWrapping="Wrap"
+                               Text="Press a button on a stick to see everything it triggers - or click a chip for its details." />
+                    <ScrollViewer x:Name="LiveScroll" Grid.Column="1" VerticalScrollBarVisibility="Auto" Visibility="Collapsed"
+                                  VerticalAlignment="Center">
+                        <WrapPanel x:Name="LiveItems" />
+                    </ScrollViewer>
+                </Grid>
+
+                <Grid x:Name="PanelBody" Visibility="Collapsed">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock x:Name="PanelAction" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="PanelPath" Style="{StaticResource Muted}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                   Margin="0,1,0,0" />
+                        <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                            <TextBlock x:Name="PanelInput" FontSize="13" FontWeight="SemiBold" />
+                            <TextBlock x:Name="PanelSource" Style="{StaticResource Muted}" FontSize="11.5" Margin="10,1,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                    <ComboBox x:Name="ModeList" Grid.Column="1" Width="190" VerticalAlignment="Center" Margin="14,0,0,0"
+                              ItemTemplate="{StaticResource ModeTemplate}" MinHeight="32"
+                              SelectionChanged="ModeList_SelectionChanged" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                        <Button Content="Bind other…" Click="PanelRebind_Click" Padding="10,5"
+                                ToolTip="Press the new key or stick button for this action" />
+                        <Button Content="Remove" Style="{StaticResource Danger}" Click="PanelRemove_Click" Padding="10,5"
+                                Margin="6,0,0,0" ToolTip="Remove this binding" />
+                        <Button Content="✕" Style="{StaticResource Flat}" Click="PanelClose_Click" Padding="8,4"
+                                Margin="4,0,0,0" ToolTip="Close the details" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
         </c:Card>
     </Grid>
 </UserControl>

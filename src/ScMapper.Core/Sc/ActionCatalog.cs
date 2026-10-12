@@ -54,11 +54,6 @@ public sealed class ActionCatalog
 
     public IEnumerable<ActionDef> AllActions => Groups.SelectMany(g => g.Actions);
 
-    /// <summary>All gamepad input tokens that appear in the defaults (e.g. "shoulderl", "dpad_up").</summary>
-    public IReadOnlyList<string> GamepadTokens() => AllActions
-        .SelectMany(a => a.DefaultGamepad.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        .Distinct().OrderBy(t => t).ToList();
-
     public ActionDef? Find(string map, string action) =>
         Groups.FirstOrDefault(g => g.Name == map)?.Actions.FirstOrDefault(a => a.Name == action);
 
@@ -189,10 +184,17 @@ public sealed class ActionCatalog
 
         var catalog = FromDefaultProfile(profile, loc, version);
         Directory.CreateDirectory(cacheDir);
-        File.WriteAllText(cacheFile, JsonSerializer.Serialize(catalog));
+        // Written aside and moved in: a reader never sees half a file, and two builds never fight over one.
+        var tmp = cacheFile + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(tmp, JsonSerializer.Serialize(catalog));
+            File.Move(tmp, cacheFile, overwrite: true);
+        }
+        catch (IOException) { try { File.Delete(tmp); } catch { } }   // another build just wrote the same file
         CatalogLayout.Apply(catalog);
         return catalog;
     }
 
-    internal static readonly Regex JsInput = new(@"^js(\d+)_(.+)$", RegexOptions.Compiled);
+    internal static readonly Regex JsInput = new(@"^js(\d{1,4})_(.+)$", RegexOptions.Compiled);
 }

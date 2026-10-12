@@ -88,10 +88,13 @@ public static class Deployer
         var cancel = new List<(string Map, string Action, string Input)>();
         if (unboundDefaults != null)
         {
+            // Star Citizen keeps one rebind per device class per action, so js1_ and js4_ are the same slot:
+            // an unbound marker for js1 next to a js4 bind would win and wipe the bind when the game saves.
             static string Device(string input)
             {
                 int i = input.IndexOf('_');
-                return i > 0 ? input[..i] : input;
+                var dev = i > 0 ? input[..i] : input;
+                return System.Text.RegularExpressions.Regex.IsMatch(dev, @"^(js|gp)\d+$") ? dev[..2] : dev;
             }
             var taken = wanted.Select(w => (w.Map, w.Action, Device(w.Input)))
                 .Concat(kbm.Concat(pad).Select(w => (w.Map, w.Action, Device(w.Input)))).ToHashSet();
@@ -142,11 +145,11 @@ public static class Deployer
         {
             if (File.Exists(actionMapsPath))
             {
-                Directory.CreateDirectory(backupDir);
-                backup = Path.Combine(backupDir, $"actionmaps_{DateTime.Now:yyyyMMdd_HHmmss}.xml");
+                backup = BackupFiles.NewPath(backupDir);
                 File.Copy(actionMapsPath, backup, overwrite: false);
             }
             file.Save(actionMapsPath);
+            if (backup != null) BackupFiles.Prune(backupDir);
         }
         return new DeployResult(wanted.Count + kbm.Count + pad.Count + cancel.Count, removed, backup, warnings, keys)
         {
@@ -154,6 +157,20 @@ public static class Deployer
             GamepadKeys = padKeys,
             Result = file,
         };
+    }
+
+    /// <summary>
+    /// Reads the file back from disk and lists what the deploy meant to write but is not there
+    /// ("map/action input"). Empty = the file holds everything the deploy planned.
+    /// </summary>
+    public static IReadOnlyList<string> Verify(ActionMapsFile expected, string actionMapsPath)
+    {
+        var onDisk = ActionMapsFile.Load(actionMapsPath).Rebinds()
+            .Select(r => (r.Map, r.Action, r.Input)).ToHashSet();
+        return expected.Rebinds()
+            .Where(r => !onDisk.Contains((r.Map, r.Action, r.Input)))
+            .Select(r => $"{r.Map}/{r.Action} {r.Input}")
+            .ToList();
     }
 
     private static List<(string Map, string Action, string Input, string? Mode)> Layer(

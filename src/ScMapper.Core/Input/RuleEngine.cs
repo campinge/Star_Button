@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
 using ScMapper.Core.Model;
+using ScMapper.Core.Sc;
 using ScMapper.Core.Storage;
 
 namespace ScMapper.Core.Input;
@@ -17,6 +18,7 @@ public sealed class RuleEngine : IDisposable
     private readonly IKeyOutput _output;
     private readonly Func<Guid, StickRecord?> _stickForDevice;
     private readonly Channel<Action> _queue = Channel.CreateUnbounded<Action>();
+    // Keyed by the physical device (not the stick record): a device can vanish or change owner while held.
     private readonly ConcurrentDictionary<(Guid, string), IReadOnlyList<KeyStroke>> _held = new();
     private readonly Task _worker;
 
@@ -59,20 +61,26 @@ public sealed class RuleEngine : IDisposable
 
     public void Handle(InputEvent e)
     {
+        // Letting go never depends on what the profile says now: the rule may have been edited or removed, the
+        // profile switched or the stick unmatched while the button was down. Whatever this button holds goes up.
+        if (!e.Pressed) ReleaseInput(e.InstanceGuid, e.Input);
         if (_suspended) return;
         var stick = _stickForDevice(e.InstanceGuid);
         if (stick is null) return;
         var prof = _store.Profile(stick.ProfileId);
         if (prof is null) return;
         HandleActions(stick, prof, e);
-        if (!prof.Rules.TryGetValue(e.Input, out var rule)) return;
+        ButtonRule? rule;
+        try { if (!prof.Rules.TryGetValue(e.Input, out rule)) return; }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or NullReferenceException) { return; }   // edited right now
         var held = _held;
-        var id = (stick.Id, e.Input);
+        var id = (e.InstanceGuid, e.Input);
 
         if (e.Pressed)
         {
             if (rule.OnPress is { IsEmpty: false } p && KeyCombo.TryParse(p.Keys, out var keys, out _))
             {
+                if (Blocked(p.Keys, prof, e)) return;
                 if (p.Hold)
                 {
                     held[id] = keys;
@@ -88,6 +96,7 @@ public sealed class RuleEngine : IDisposable
                 _queue.Writer.TryWrite(() => _output.Up(heldKeys));
             if (rule.OnRelease is { IsEmpty: false } r && KeyCombo.TryParse(r.Keys, out var keys, out _))
             {
+                if (Blocked(r.Keys, prof, e)) return;
                 Tap(keys);
                 Fired?.Invoke(new FiredRule(prof.Name, e.Input, $"release → {r.Keys}", e.Utc));
             }
@@ -96,10 +105,9 @@ public sealed class RuleEngine : IDisposable
 
     private void HandleActions(StickRecord stick, ControllerProfile prof, InputEvent e)
     {
-        List<ButtonAction> mine = prof.Actions.Where(a => a.Input == e.Input).ToList();
-        foreach (var a in mine)
+        foreach (var a in ActionsFor(prof, e.Input))
         {
-            var heldId = (stick.Id, $"{e.Input}#{a.Id:N}");
+            var heldId = (e.InstanceGuid, $"{e.Input}#{a.Id:N}");
             if (a.Trigger == ButtonTrigger.Held && !e.Pressed)
             {
                 // Always let go, even if the modifier was released first.
@@ -116,6 +124,7 @@ public sealed class RuleEngine : IDisposable
 
             string? combo = a.Keys ?? (a.Map != null && a.Action != null ? ActionKey?.Invoke(a.Map, a.Action) : null);
             if (!KeyCombo.TryParse(combo, out var keys, out _)) continue;
+            if (Blocked(combo, prof, e)) continue;
             if (a.Trigger == ButtonTrigger.Held)
             {
                 _held[heldId] = keys;
@@ -127,10 +136,68 @@ public sealed class RuleEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// The actions of an input as a private copy. The UI edits the list on its own thread; a copy that races an
+    /// edit is simply taken again.
+    /// </summary>
+    private static List<ButtonAction> ActionsFor(ControllerProfile prof, string input)
+    {
+        for (int attempt = 0; attempt < 4; attempt++)
+        {
+            try { return prof.Actions.Where(a => a != null && a.Input == input).ToList(); }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or NullReferenceException) { }
+        }
+        return new List<ButtonAction>();
+    }
+
+    /// <summary>Lets go of everything the given input of a device holds (rule keys and "while held" actions).</summary>
+    private void ReleaseInput(Guid device, string input)
+    {
+        string prefix = input + "#";
+        foreach (var kv in _held.ToArray())
+        {
+            if (kv.Key.Item1 != device) continue;
+            if (kv.Key.Item2 != input && !kv.Key.Item2.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            if (_held.TryRemove(kv.Key, out var keys)) _queue.Writer.TryWrite(() => _output.Up(keys));
+        }
+    }
+
+    /// <summary>The device is gone (unplugged, unmatched): its buttons can no longer report a release.</summary>
+    public void ReleaseDevice(Guid device)
+    {
+        foreach (var kv in _held.ToArray())
+            if (kv.Key.Item1 == device && _held.TryRemove(kv.Key, out var keys))
+                _queue.Writer.TryWrite(() => _output.Up(keys));
+    }
+
+    /// <summary>
+    /// A joystick button must never close a window or switch tasks. This is checked where keys are sent, not
+    /// where they are chosen: captured bindings, imported profiles and the game's file all end up here.
+    /// </summary>
+    private bool Blocked(string? combo, ControllerProfile prof, InputEvent e)
+    {
+        var why = KeyPlanner.DangerReason(combo);
+        if (why == null) return false;
+        Fired?.Invoke(new FiredRule(prof.Name, e.Input, $"blocked {combo}: {why}", e.Utc));
+        return true;
+    }
+
+    private int _pendingTaps;
+    private const int MaxPendingTaps = 24;
+
     private void Tap(IReadOnlyList<KeyStroke> keys)
     {
+        // Each tap takes TapMilliseconds on the single output worker. A chattering switch or a mashed button would
+        // otherwise queue seconds of stale keys; beyond a handful in flight a new tap is dropped.
+        if (Interlocked.Increment(ref _pendingTaps) > MaxPendingTaps)
+        {
+            Interlocked.Decrement(ref _pendingTaps);
+            return;
+        }
         _queue.Writer.TryWrite(() =>
         {
+            try
+            {
             // A button held as a keyboard modifier ("layer" button) would turn this tap into shift+key for the
             // game: lift it for the tap and put it back afterwards.
             var layer = HeldLayerModifiers();
@@ -142,6 +209,8 @@ public sealed class RuleEngine : IDisposable
             // Only what is still held now: the button may have been released during the tap.
             var restore = HeldLayerModifiers().Where(m => layer.Contains(m)).ToList();
             if (restore.Count > 0) _output.Down(restore);
+            }
+            finally { Interlocked.Decrement(ref _pendingTaps); }
         });
     }
 

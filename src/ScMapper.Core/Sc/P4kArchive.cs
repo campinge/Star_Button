@@ -21,8 +21,6 @@ public sealed class P4kArchive : IDisposable
 
     private P4kArchive(FileStream file) => _file = file;
 
-    public long EntryCount => _entries;
-
     public static P4kArchive Open(string path)
     {
         var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16);
