@@ -65,12 +65,13 @@ public sealed partial class AppController
         return Catalog?.Find(s.Map!, s.Action!)?.Joystick ?? true;
     }
 
-    /// <summary>Everything attached to one input: direct bindings first, then app-driven actions.</summary>
+    /// <summary>
+    /// The custom actions of one input. Star Citizen bindings on the button are not listed: they belong to the
+    /// game and show up as conflicts once the button is replaced.
+    /// </summary>
     public IReadOnlyList<ButtonActionRow> ActionsOf(ControllerProfile p, string input)
     {
         var rows = new List<ButtonActionRow>();
-        foreach (var b in p.Binds.Where(b => !b.IsUnbound && ScInputCodes.SplitJsInput(b.Input).Input == input))
-            rows.Add(new ButtonActionRow { Bind = b });
         // A button that only holds a modifier is shown by the inspector's "Use as modifier" setting instead.
         foreach (var a in p.Actions.Where(a => a.Input == input && !IsLayerAction(a)))
             rows.Add(new ButtonActionRow { Action = a });

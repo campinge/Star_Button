@@ -18,7 +18,7 @@ public partial class Backdrop : UserControl
         set
         {
             _showScan = value;
-            ScanLine.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+            ScanLine.Visibility = value && !ThemeManager.IsFlat ? Visibility.Visible : Visibility.Collapsed;
             UpdateScan();
         }
     }
@@ -40,14 +40,14 @@ public partial class Backdrop : UserControl
 
     private void UpdateScan()
     {
-        if (_showScan && IsVisible && IsLoaded && !_scanning)
+        if (_showScan && !ThemeManager.IsFlat && IsVisible && IsLoaded && !_scanning)
         {
             _scanning = true;
             var h = Math.Max(ActualHeight, 800);
             var a = new DoubleAnimation(-10, h, TimeSpan.FromSeconds(11)) { RepeatBehavior = RepeatBehavior.Forever };
             Scan.BeginAnimation(TranslateTransform.YProperty, a);
         }
-        else if ((!_showScan || !IsVisible) && _scanning)
+        else if ((!_showScan || ThemeManager.IsFlat || !IsVisible) && _scanning)
         {
             _scanning = false;
             Scan.BeginAnimation(TranslateTransform.YProperty, null);
@@ -56,10 +56,17 @@ public partial class Backdrop : UserControl
 
     private void Rebuild()
     {
+        // Flat themes (Kartell) are a plain ground: no light, vignette, texture, scan line or brackets.
+        var flat = ThemeManager.IsFlat;
+        var v = flat ? Visibility.Collapsed : Visibility.Visible;
+        TopGlow.Visibility = CornerGlow.Visibility = Vignette.Visibility = Texture.Visibility = Brackets.Visibility = v;
+        UpdateScan();
+        ScanLine.Visibility = _showScan && !flat ? Visibility.Visible : Visibility.Collapsed;
         Texture.Fill = ThemeManager.Current.Pattern switch
         {
             "hatch" => Hatch(),
             "dots" => Dots(),
+            "none" => null,
             _ => GridTexture(),
         };
         DrawBrackets();

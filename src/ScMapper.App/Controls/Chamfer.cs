@@ -49,7 +49,7 @@ public sealed class ChamferFrame : FrameworkElement
     }
 }
 
-/// <summary>Panel with a chamfered outline and small corner ticks; replaces the rounded Border cards.</summary>
+/// <summary>Panel with a chamfered outline and small corner ticks (flat themes: square, one orange rule); replaces the rounded Border cards.</summary>
 public class Card : Border
 {
     public static readonly DependencyProperty CutProperty = DependencyProperty.Register(nameof(Cut), typeof(double),
@@ -73,6 +73,14 @@ public class Card : Border
         var pen = BorderBrush == null || BorderThickness.Left <= 0 ? null : new Pen(BorderBrush, 1);
         var shape = ChamferGeometry.Create(rect, Cut);
         dc.DrawGeometry(Background, pen, shape);
+        if (ThemeManager.IsFlat)
+        {
+            // Flat (Kartell) look: just the outline plus a short orange rule on the top edge, like the underlined
+            // headlines of das-kartell.org.
+            if (Application.Current.TryFindResource("AccentBrush") is Brush rule && ActualWidth > 60 && ActualHeight > 40)
+                dc.DrawRectangle(rule, null, new Rect(0, 0, 28, 2));
+            return;
+        }
         // Soft accent sheen from the top edge, so cards read as lit panels rather than flat boxes.
         if (Application.Current.TryFindResource("AccentColor") is Color ac && ActualHeight > 40)
         {

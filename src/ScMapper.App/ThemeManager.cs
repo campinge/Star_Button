@@ -10,12 +10,23 @@ namespace ScMapper.App;
 /// </summary>
 public static class ThemeManager
 {
-    /// <param name="Pattern">Backdrop texture: "grid" (navigation display), "hatch" (diagonal industrial stripes) or "dots".</param>
+    /// <param name="Pattern">Backdrop texture: "none" (flat), "grid" (navigation display), "hatch" (diagonal industrial stripes) or "dots".</param>
     public sealed record ThemeInfo(string Key, string Title, string Hint, double Cut, Dictionary<string, string> Colors,
         string Pattern = "grid");
 
     public static readonly IReadOnlyList<ThemeInfo> Themes = new[]
     {
+        // Das Kartell, taken from das-kartell.org: flat #151515 ground, orange #E77E23, #3F3F3F rules, white Lato.
+        // AccentDim is the site's "orange at 25 %" (#E77E2340) flattened onto the ground. Cut 0 = square corners and no
+        // decoration (no glow, ticks, brackets or texture); the other themes keep their sci-fi shapes.
+        new ThemeInfo("kartell", "Das Kartell", "Flat charcoal, Kartell orange, Lato", 0, new()
+        {
+            ["Bg"] = "#151515", ["Panel"] = "#1B1B1B", ["Panel2"] = "#222222", ["Border"] = "#2E2E2E", ["Border2"] = "#3F3F3F",
+            ["Accent"] = "#E77E23", ["AccentDim"] = "#492F18", ["AccentDeep"] = "#2B1E12", ["OnAccent"] = "#FFFFFF",
+            ["Text"] = "#FFFFFF", ["Muted"] = "#9A9A9A", ["Good"] = "#6FCF7A", ["Warn"] = "#FFC14D", ["Bad"] = "#E8412F",
+            ["WarnDim"] = "#2B2410", ["Hover"] = "#262626", ["Thumb"] = "#3F3F3F",
+            ["Glow"] = "#151515", ["GridLine"] = "#151515",
+        }, "none"),
         new ThemeInfo("cyan", "Cyan Console", "Cool blue, close to the mobiGlas", 12, new()
         {
             ["Bg"] = "#060A0F", ["Panel"] = "#0B131C", ["Panel2"] = "#0F1B27", ["Border"] = "#1F3A4D", ["Border2"] = "#2C5570",
@@ -32,15 +43,6 @@ public static class ThemeManager
             ["WarnDim"] = "#2E2608", ["Hover"] = "#241C13", ["Thumb"] = "#5C4631",
             ["Glow"] = "#2E1B09", ["GridLine"] = "#241A10",
         }, "hatch"),
-        // Colours from das-kartell.org: near-black #151515, orange #E77E23, grey #3F3F3F, neutral (no tint) greys.
-        new ThemeInfo("kartell", "Das Kartell", "Neutral charcoal with Kartell orange", 3, new()
-        {
-            ["Bg"] = "#0F0F0F", ["Panel"] = "#151515", ["Panel2"] = "#1C1C1C", ["Border"] = "#2B2B2B", ["Border2"] = "#3F3F3F",
-            ["Accent"] = "#E77E23", ["AccentDim"] = "#3A220E", ["AccentDeep"] = "#251609", ["OnAccent"] = "#151515",
-            ["Text"] = "#F2F2F2", ["Muted"] = "#8E8E8E", ["Good"] = "#6FCF7A", ["Warn"] = "#FFC14D", ["Bad"] = "#E8412F",
-            ["WarnDim"] = "#2B2410", ["Hover"] = "#232323", ["Thumb"] = "#3F3F3F",
-            ["Glow"] = "#2A1708", ["GridLine"] = "#232323",
-        }, "dots"),
     };
 
     private static Effect Glow(Color c, double blur, double opacity)
@@ -51,6 +53,9 @@ public static class ThemeManager
     }
 
     public static ThemeInfo Current { get; private set; } = Themes[0];
+
+    /// <summary>Flat themes (square corners) skip the glow, sheen, corner ticks and backdrop decoration.</summary>
+    public static bool IsFlat => Current.Cut <= 0;
 
     public static event Action? Changed;
 
@@ -75,7 +80,8 @@ public static class ThemeManager
         res["AccentGlow"] = Glow(accent, 18, 0.5);
         res["AccentGlowSoft"] = Glow(accent, 24, 0.32);
         res["CardCut"] = t.Cut;
-        res["ControlCut"] = Math.Max(3, t.Cut / 2);
+        res["ControlCut"] = t.Cut <= 0 ? 0 : Math.Max(3, t.Cut / 2);
+        res["IsFlat"] = t.Cut <= 0;
         Current = t;
         Changed?.Invoke();
     }

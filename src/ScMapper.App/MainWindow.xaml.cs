@@ -110,6 +110,12 @@ public partial class MainWindow : Window
     public void SelectInput(string input) => SticksPage.SelectInput(input);
     public void SelectAction(string key) => BindingsPage.SelectAction(key);
 
+    private void Kartell_Click(object sender, RoutedEventArgs e)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://das-kartell.org") { UseShellExecute = true }); }
+        catch { /* no browser registered: nothing to do */ }
+    }
+
     public void ShowPage(string name)
     {
         (name switch { "bindings" => NavBindings, "settings" => NavSettings, "antiafk" => NavAntiAfk, _ => NavSticks }).IsChecked = true;

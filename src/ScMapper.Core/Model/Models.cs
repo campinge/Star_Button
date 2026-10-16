@@ -184,8 +184,8 @@ public sealed class AppSettings
     public string? ScRoot { get; set; }
     public string Channel { get; set; } = "LIVE";
     public CloseAction OnClose { get; set; } = CloseAction.Ask;
-    /// <summary>Visual theme key, see ThemeManager in the app ("cyan" or "amber").</summary>
-    public string Theme { get; set; } = "cyan";
+    /// <summary>Visual theme key, see ThemeManager in the app ("kartell", "cyan" or "amber").</summary>
+    public string Theme { get; set; } = "kartell";
 }
 
 /// <summary>What the window's X button does.</summary>

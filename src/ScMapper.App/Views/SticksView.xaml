@@ -125,7 +125,7 @@
                             <DockPanel Grid.Row="2" Margin="0,0,0,0" VerticalAlignment="Top">
                                 <DockPanel DockPanel.Dock="Top" Margin="0,20,0,10">
                                     <TextBlock DockPanel.Dock="Right" Style="{StaticResource Muted}" FontSize="11.5"
-                                               VerticalAlignment="Center" Text="● has a rule or binding" />
+                                               VerticalAlignment="Center" Text="● has a custom action or name" />
                                     <TextBlock Style="{StaticResource H2}" Text="BUTTONS" />
                                 </DockPanel>
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">

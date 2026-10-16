@@ -213,7 +213,7 @@ public partial class SticksView : UserControl
         }
         if (prof != null)
         {
-            foreach (var k in prof.Rules.Keys.Concat(prof.Actions.Select(a => a.Input)).Concat(prof.Binds.Select(b => ScMapper.Core.Sc.ScInputCodes.SplitJsInput(b.Input).Input)))
+            foreach (var k in prof.Rules.Keys.Concat(prof.Actions.Select(a => a.Input)))
                 if (Number(k, out var n)) marked.Add(n);
             foreach (var k in prof.Actions.Select(a => a.Input))
                 if (Number(k, out var n)) replaced.Add(n);

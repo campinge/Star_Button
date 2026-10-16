@@ -5,7 +5,7 @@
     <!-- Themed decoration behind a whole window or screen: glow from the top, a texture (grid or hatch, set by the
          theme), a slow scan line and corner brackets. Everything takes its colours from the theme resources. -->
     <Grid ClipToBounds="True">
-        <Rectangle>
+        <Rectangle x:Name="TopGlow">
             <Rectangle.Fill>
                 <RadialGradientBrush Center="0.5,0" GradientOrigin="0.5,0" RadiusX="0.9" RadiusY="0.8">
                     <GradientStop Color="{DynamicResource GlowColor}" Offset="0" />
@@ -14,7 +14,7 @@
             </Rectangle.Fill>
         </Rectangle>
         <!-- second, fainter light from the lower right, so the screen is not lit from one side only -->
-        <Rectangle Fill="{DynamicResource AccentBrush}" Opacity="0.07">
+        <Rectangle x:Name="CornerGlow" Fill="{DynamicResource AccentBrush}" Opacity="0.07">
             <Rectangle.OpacityMask>
                 <RadialGradientBrush Center="1,1" GradientOrigin="1,1" RadiusX="0.6" RadiusY="0.7">
                     <GradientStop Color="#FF000000" Offset="0" />
@@ -25,7 +25,7 @@
         <!-- texture, filled in code (it depends on the theme) -->
         <Rectangle x:Name="Texture" Opacity="0.6" />
         <!-- vignette -->
-        <Rectangle>
+        <Rectangle x:Name="Vignette">
             <Rectangle.Fill>
                 <RadialGradientBrush Center="0.5,0.5" RadiusX="0.85" RadiusY="0.85">
                     <GradientStop Color="#00000000" Offset="0.6" />

@@ -158,9 +158,8 @@ public class ActionTests
         Assert.Single(prof.Binds);
         Assert.Empty(prof.Actions);
         Assert.Empty(c.KeyboardMouseProfile.Binds);
-        var row = Assert.Single(c.ActionsOf(prof, "button2"));
-        Assert.False(row.ViaApp);
-        Assert.Equal(ButtonTrigger.Pressed, row.Trigger);
+        // Game bindings are not custom actions: the inspector does not list them.
+        Assert.Empty(c.ActionsOf(prof, "button2"));
     }
 
     [Fact]

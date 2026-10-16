@@ -117,7 +117,7 @@ public class ModifierTests
     }
 
     [Fact]
-    public void Inspector_rows_show_modified_bindings_on_their_button_and_edit_the_modifier()
+    public void Inspector_rows_do_not_list_game_bindings_but_UpdateAction_still_edits_the_modifier()
     {
         using var c = new AppController(new AppStore(Tmp("store")), new FakeHub(), new FakeOutput());
         var p = new ControllerProfile { Name = "P" };
@@ -126,10 +126,10 @@ public class ModifierTests
         c.AddAction(p, "button1", spec);
         var bind = Assert.Single(p.Binds);
         Assert.Equal("lshift+button1", bind.Input);
-        var row = Assert.Single(c.ActionsOf(p, "button1"));
+        Assert.Empty(c.ActionsOf(p, "button1"));
+        var row = new ButtonActionRow { Bind = bind };
         Assert.False(row.ViaApp);
         Assert.Equal("lshift", row.KeyModifier);
-        Assert.Empty(c.ActionsOf(p, "button2"));
 
         // Removing the modifier turns it back into a plain binding of the same action.
         c.UpdateAction(p, "button1", row, row.ToSpec() with { KeyModifier = null });

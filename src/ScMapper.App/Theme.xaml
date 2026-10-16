@@ -42,8 +42,8 @@
     <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="CardCut">12</sys:Double>
     <sys:Double xmlns:sys="clr-namespace:System;assembly=System.Runtime" x:Key="ControlCut">6</sys:Double>
 
-    <!-- Bahnschrift ships with Windows 10+; DIN-like and technical. -->
-    <FontFamily x:Key="UiFont">Bahnschrift, Segoe UI Variable Text, Segoe UI</FontFamily>
+    <!-- Lato, the typeface of das-kartell.org, is bundled in Assets/Fonts (Light, Regular, Bold). -->
+    <FontFamily x:Key="UiFont">./Assets/Fonts/#Lato, Segoe UI Variable Text, Segoe UI</FontFamily>
     <FontFamily x:Key="MonoFont">Consolas</FontFamily>
 
     <Style TargetType="TextBlock">
@@ -55,14 +55,14 @@
         <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
     </Style>
     <Style x:Key="H1" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-        <Setter Property="FontSize" Value="22" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontSize" Value="24" />
+        <Setter Property="FontWeight" Value="Regular" />
     </Style>
-    <!-- Section label: small, muted; write the text in capitals. -->
+    <!-- Section label: small, in the accent colour like the card headings of das-kartell.org; write the text in capitals. -->
     <Style x:Key="H2" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
         <Setter Property="FontSize" Value="12" />
-        <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
     </Style>
 
     <!-- Card: chamfered panel with outline and accent corner ticks. -->
@@ -74,14 +74,21 @@
         <Setter Property="Cut" Value="{DynamicResource CardCut}" />
     </Style>
 
+    <!-- Plain text inside a button, nav item or tab follows its's Foreground (the implicit TextBlock style would otherwise pin it). -->
+    <ResourceDictionary x:Key="ButtonText">
+        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ContentControl}}" />
+        </Style>
+    </ResourceDictionary>
+
     <!-- Buttons -->
     <Style TargetType="Button">
         <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
-        <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+        <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="{DynamicResource Border2Brush}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
-        <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Padding" Value="14,6" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Padding" Value="16,7" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
@@ -90,12 +97,14 @@
                     <Grid>
                         <c:ChamferFrame x:Name="f" Fill="{TemplateBinding Background}" Stroke="{TemplateBinding BorderBrush}"
                                         Cut="{DynamicResource ControlCut}" />
-                        <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Resources="{StaticResource ButtonText}" />
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="f" Property="Stroke" Value="{DynamicResource AccentBrush}" />
                             <Setter TargetName="f" Property="Fill" Value="{DynamicResource HoverBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="f" Property="Stroke" Value="{DynamicResource AccentBrush}" />
@@ -111,15 +120,40 @@
             </Setter.Value>
         </Setter>
     </Style>
+    <!-- Primary button, as on das-kartell.org: orange text on a 25 % orange fill; hover turns solid orange with a glow. -->
     <Style x:Key="Accent" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
         <Setter Property="Background" Value="{DynamicResource AccentDimBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentDimBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
-        <Style.Triggers>
-            <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Effect" Value="{DynamicResource AccentGlow}" />
-            </Trigger>
-        </Style.Triggers>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid x:Name="g">
+                        <c:ChamferFrame x:Name="f" Fill="{TemplateBinding Background}" Stroke="{TemplateBinding BorderBrush}"
+                                        Cut="{DynamicResource ControlCut}" />
+                        <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Resources="{StaticResource ButtonText}" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="f" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                            <Setter TargetName="f" Property="Stroke" Value="{DynamicResource AccentBrush}" />
+                            <Setter TargetName="g" Property="Effect" Value="{DynamicResource AccentGlow}" />
+                            <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="f" Property="Stroke" Value="{DynamicResource AccentBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="g" Property="Opacity" Value="0.85" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <Style x:Key="Danger" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
         <Setter Property="Foreground" Value="{DynamicResource BadBrush}" />
@@ -135,7 +169,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border Background="Transparent" Padding="{TemplateBinding Padding}">
-                        <ContentPresenter VerticalAlignment="Center" />
+                        <ContentPresenter VerticalAlignment="Center" Resources="{StaticResource ButtonText}" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -155,34 +189,25 @@
         <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
         <Setter Property="FontSize" Value="15" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontWeight" Value="Bold" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
                     <Grid x:Name="b" Background="Transparent" Margin="0,2">
-                        <!-- selected: accent wash fading out to the right, with a glowing bar on the left -->
-                        <Rectangle x:Name="wash" Visibility="Collapsed">
-                            <Rectangle.Fill>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                    <GradientStop Color="{DynamicResource AccentDimColor}" Offset="0" />
-                                    <GradientStop Color="#00000000" Offset="1" />
-                                </LinearGradientBrush>
-                            </Rectangle.Fill>
-                        </Rectangle>
+                        <!-- selected: solid orange bar on the left, no wash or glow -->
                         <Border x:Name="bar" Width="3" HorizontalAlignment="Left" Background="{DynamicResource AccentBrush}"
-                                Effect="{DynamicResource AccentGlow}" Visibility="Collapsed" Margin="0,5" />
-                        <ContentPresenter Margin="22,11,14,11" VerticalAlignment="Center" />
+                                Visibility="Collapsed" />
+                        <ContentPresenter Margin="22,11,14,11" VerticalAlignment="Center" Resources="{StaticResource ButtonText}" />
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="b" Property="Background" Value="{DynamicResource HoverBrush}" />
-                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentDeepBrush}" />
-                            <Setter TargetName="wash" Property="Visibility" Value="Visible" />
                             <Setter TargetName="bar" Property="Visibility" Value="Visible" />
                             <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
                         </Trigger>
@@ -197,14 +222,14 @@
         <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
         <Setter Property="FontSize" Value="15" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontWeight" Value="Bold" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
                     <Border x:Name="b" Background="Transparent" BorderThickness="0,0,0,2" BorderBrush="Transparent">
-                        <ContentPresenter Margin="14,10" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ContentPresenter Margin="14,10" HorizontalAlignment="Center" VerticalAlignment="Center" Resources="{StaticResource ButtonText}" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">

@@ -72,7 +72,7 @@ public sealed class AppStore
         d.ManagedGamepadKeys ??= new();
         d.Settings ??= new();
         d.Settings.Channel ??= "LIVE";
-        d.Settings.Theme ??= "cyan";
+        d.Settings.Theme ??= "kartell";
 
         d.Sticks.RemoveAll(s => s == null);
         d.Profiles.RemoveAll(p => p == null);
